@@ -20,6 +20,8 @@ export const config = {
   // API Keys
   groqApiKey: process.env.GROQ_API_KEY || '',
   falKey: process.env.FAL_KEY || '',
+  elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
+  elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '',
   
   // Supabase
   supabaseUrl: process.env.SUPABASE_URL || '',

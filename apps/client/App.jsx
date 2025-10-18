@@ -571,6 +571,17 @@ export default function ParkourGame() {
       applyAvatarForPlayer(id, avatar);
     });
 
+    // 🎤 Random voice timer - plays a random phrase every 15 seconds
+    const voiceInterval = setInterval(() => {
+      console.log('🎤 Playing random voice line...');
+      fetch(`${serverUrl}/voice/random`)
+        .then(r => r.blob())
+        .then(blob => {
+          const audio = new Audio(URL.createObjectURL(blob));
+          audio.play().catch(e => console.log('Audio play failed:', e));
+        })
+        .catch(e => console.log('Voice fetch failed:', e));
+    }, 15000); // Every 15 seconds
     // Authoritative state updates for other players
     socket.on('state', (data) => {
       if (!data || !Array.isArray(data.players)) return;
@@ -673,9 +684,10 @@ export default function ParkourGame() {
         setScore(distanceScore);
       }
 
-      // Check if fell off (lowered threshold to allow for lower platforms)
-      if (player.position.y < -15 && !gameOver) {
+      // Check for death and respawn
+      if (player.position.y < -30 && !gameOver) {
         const finalScore = distanceScore;
+        
         setGameOver(true);
         setScore(0); // Reset score immediately
         
@@ -720,6 +732,7 @@ export default function ParkourGame() {
 
     // Cleanup
     return () => {
+      clearInterval(voiceInterval); // Stop voice timer
       socket.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', () => {});
