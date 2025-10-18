@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabase';
+import { supabase, isSupabaseConfigured } from '../config/supabase';
 
 export interface GeneratedImage {
   id: string;
@@ -64,6 +64,9 @@ export async function checkGenerationStatus(
   generationId: string
 ): Promise<GeneratedImage | null> {
   try {
+    if (!isSupabaseConfigured || !supabase) {
+      return null;
+    }
     const { data, error } = await supabase
       .from('generated_backgrounds')
       .select('*')
@@ -128,6 +131,9 @@ export async function fetchRecentGeneratedBackgrounds(
   limit: number = 10
 ): Promise<GeneratedImage[]> {
   try {
+    if (!isSupabaseConfigured || !supabase) {
+      return [];
+    }
     const { data, error } = await supabase
       .from('generated_backgrounds')
       .select('*')
@@ -157,6 +163,9 @@ export function subscribeToGenerationUpdates(
   generationId: string,
   onUpdate: (image: GeneratedImage) => void
 ): () => void {
+  if (!isSupabaseConfigured || !supabase) {
+    return () => {};
+  }
   const subscription = supabase
     .channel(`generation-${generationId}`)
     .on(
