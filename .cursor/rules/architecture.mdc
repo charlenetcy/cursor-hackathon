@@ -1,0 +1,115 @@
+---
+alwaysApply: true
+---
+# Project Rules & Context
+
+## Project Overview
+**Prompt-Driven Multiplayer Parkour World** - A real-time multiplayer 3D parkour game where players type prompts to restyle upcoming chunks while maintaining deterministic gameplay.
+
+## Core Concept
+- Players type prompts ("Japan," "White House," "ducks") to restyle upcoming chunks
+- Core geometry and gameplay (Minecraft-like tower) remain deterministic and validated for playability
+- Prompts affect style (palette, motifs, textures, skybox) and optional mechanics/difficulty tags for future chunks only
+
+## Architecture Requirements
+
+### Frontend Stack
+- **Rendering**: Three.js or Babylon.js (instanced meshes)
+- **Physics**: Rapier WASM or cannon-es for local physics feel
+- **Networking**: Socket.io client for networking, interpolation, reconciliation
+- **Style**: Runtime applies palette + textures + skybox; decor is non-collidable
+
+### Backend Stack
+- **Runtime**: Node.js + TypeScript authoritative loop @ 20 Hz
+- **Generation**: Procedural generator for deterministic tower
+  - PRNG seed = H(worldSeed | promptId | chunkIndex)
+- **Validation**: Analytic validator checking jump gaps, slopes, reachable path, guardrails
+- **Prompt Service**: Rule-based parse + LLM fallback (via Groq) to JSON tags
+- **Assets**: Async 2D texture/skybox generation job (Fal.ai / Meshy)
+- **Networking**: Sends `state`, `chunk_add`, `prompt_ack`, `corr` (corrections)
+
+### Storage & Infrastructure
+- **CDN**: Cloudflare R2 / S3 for textures/skyboxes
+- **Database**: Postgres/SQLite for prompt logs and metrics
+- **Metrics**: Track chunk gen time, validator ms, prompt success/fail
+
+## Critical Safety Rules
+
+### Determinism Requirements
+- All generation MUST be keyed by `(worldSeed, promptId, chunkIndex)`
+- Prompts ONLY affect future chunks (e.g., +3 … +5 ahead)
+- Decor NEVER introduces colliders or alters physics
+- Always derive seeds from `(worldSeed, promptId, chunkIndex)` to ensure identical rebuilds
+
+### Fallback Strategy
+- Last-good palette
+- Generic skybox
+- Bridge/safe chunk to preserve playability
+- Active window ≈ 7 chunks (last 2 + next 5)
+- Floating origin: rebase every 10 chunks to maintain precision
+
+### Error Handling
+- If any generation/validation step fails:
+  - Use last-good palette and generic skybox
+  - Insert bridge/safe chunk
+  - Emit metrics + optional `corr`
+- Keep authoritative loop simple, bounded, and observable (pino logs + metrics)
+- Avoid blocking game loop with external calls; async texture/skybox jobs only
+
+## Core Flow Implementation
+
+### 1. Join Phase
+- Client receives `worldSeed`, current chunk window, and player states
+
+### 2. Play Phase
+- Client sends input at 10–20 Hz
+- Server is authoritative for simulation; client interpolates and runs local physics for feel
+
+### 3. Prompt Phase
+- Player sends text prompt
+- Server:
+  - Parses → `{ palette, motifs, mechanics, difficulty }`
+  - Derives `promptId` + PRNG seed
+  - Generates tower chunks deterministically + validates playability
+  - Triggers async 2D texture/skybox generation
+  - Broadcasts `chunk_add` to all clients
+
+### 4. Client Processing
+- Rebuild chunks deterministically from `(worldSeed, promptId, chunkIndex)`
+- Apply new textures/skybox when ready
+- Physics remain identical (no collider changes from decor)
+
+## Networking Events
+- `state`: Authoritative world + players snapshot
+- `chunk_add`: New deterministic chunk(s) based on current `(worldSeed, promptId, chunkIndex)`
+- `prompt_ack`: Confirmation + derived `promptId` and timing info
+- `corr`: Corrections/reconciliation for divergence or invalidation
+
+## MVP Targets
+- 3-player lobby with smooth physics and interpolation
+- Prompt-to-restyle visible in < 2 seconds for upcoming chunks
+- Deterministic tower always validated and playable
+- Textures/skyboxes cached; no runtime 3D asset generation
+
+## Development Priorities
+1. Deterministic tower generator + validator
+2. Join/init + authoritative net sync loop
+3. Prompt parser → normalized tags (JSON)
+4. Style layer (palette + skybox + texture) with caching/fallbacks
+5. `chunk_add` pipeline for future-only chunks
+6. Corrections (`corr`) + fallbacks + metrics
+
+## Technology Stack (MVP)
+- **Client**: Three.js / Rapier / Socket.io / Vite
+- **Server**: Node.js + TypeScript / Socket.io / PRNG / zod / pino
+- **Prompt**: Groq LLM (JSON output)
+- **Textures/Skyboxes**: Fal.ai or Meshy (fast 2D generation)
+- **CDN**: Cloudflare R2 / S3
+- **Future**: Consider migrating validator/game loop to Go or Rust for performance
+
+## Key Constraints
+- Never let prompts modify colliders or existing chunks
+- Maintain deterministic rebuilds across all clients
+- Preserve playability above all else
+- Keep external API calls async and non-blocking
+- Implement comprehensive fallback mechanisms

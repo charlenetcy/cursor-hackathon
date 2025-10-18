@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt & Style Service - Test Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .input-section {
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            display: none;
+        }
+
+        .results.active {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .result-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .palette {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .color-swatch {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding: 5px;
+            font-size: 11px;
+            color: white;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        .motifs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .motif-tag {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .skybox-preview {
+            width: 100%;
+            border-radius: 12px;
+            margin-top: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #1976d2;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .cost-tracker {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .cost-tracker h4 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #ffeaa7;
+        }
+
+        @media (max-width: 768px) {
+            .results.active {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Prompt & Style Service</h1>
+            <p>Test your AI-powered prompt parsing and asset generation</p>
+        </div>
+
+        <div class="card">
+            <div class="cost-tracker">
+                <h4>💰 Estimated API Costs</h4>
+                <div class="cost-item">
+                    <span>Groq API calls:</span>
+                    <span id="groqCalls">0</span>
+                </div>
+                <div class="cost-item">
+                    <span>Fal.ai generations:</span>
+                    <span id="falCalls">0</span>
+                </div>
+                <div class="cost-item">
+                    <span><strong>Estimated total cost:</strong></span>
+                    <span id="totalCost"><strong>$0.00</strong></span>
+                </div>
+            </div>
+
+            <div class="input-section">
+                <div class="input-group">
+                    <label for="apiUrl">Service URL:</label>
+                    <input type="text" id="apiUrl" value="http://localhost:3001" placeholder="http://localhost:3001">
+                </div>
+
+                <div class="input-group">
+                    <label for="promptText">Prompt Text:</label>
+                    <textarea id="promptText" rows="3" placeholder="e.g., Japanese temple at sunset">Japanese temple at sunset</textarea>
+                </div>
+
+                <button id="testBtn" onclick="testPrompt()">🚀 Test Full Pipeline</button>
+                <button id="parseOnlyBtn" onclick="testParseOnly()" style="margin-left: 10px; background: #43a047;">🔍 Parse Only (Cheap)</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p id="loadingText">Processing...</p>
+            </div>
+
+            <div class="error" id="error" style="display: none;"></div>
+
+            <div class="results" id="results">
+                <div class="result-card">
+                    <h3>📋 Parsed Data (Groq AI)</h3>
+                    <div>
+                        <p><strong>Prompt ID:</strong> <code id="promptId"></code></p>
+                        <p style="margin-top: 10px;"><strong>Difficulty:</strong> <span id="difficulty"></span>/5</p>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <p><strong>Color Palette:</strong></p>
+                        <div class="palette" id="palette"></div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <p><strong>Motifs:</strong></p>
+                        <div class="motifs" id="motifs"></div>
+                    </div>
+                    <div class="info">
+                        ℹ️ This data is AI-generated by Groq and used to create the skybox
+                    </div>
+                </div>
+
+                <div class="result-card">
+                    <h3>🎨 Generated Assets</h3>
+                    <div id="assetSection" style="display: none;">
+                        <div style="margin-bottom: 25px;">
+                            <p><strong>🌅 Skybox URL (Equirectangular 2048x1024):</strong></p>
+                            <a id="skyboxUrl" href="#" target="_blank" style="color: #667eea; word-break: break-all; font-size: 13px;"></a>
+                            <img id="skyboxPreview" class="skybox-preview" alt="Generated Skybox" style="margin-top: 10px;">
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <p><strong>🎨 Texture URL (64x64 Solid Color from Theme Palette):</strong></p>
+                            <a id="textureUrl" href="#" target="_blank" style="color: #48bb78; word-break: break-all; font-size: 13px;"></a>
+                            <img id="texturePreview" class="skybox-preview" alt="Generated Texture" style="margin-top: 10px; max-width: 256px; image-rendering: pixelated;">
+                            <p style="font-size: 12px; color: #999; margin-top: 8px;">✨ Instant generation, no AI cost!</p>
+                        </div>
+                        <div class="info" style="margin-top: 15px;">
+                            ⏱️ Total generation time: <span id="genTime"></span>
+                        </div>
+                    </div>
+                    <div id="assetPlaceholder">
+                        <p style="color: #999; text-align: center; padding: 40px;">
+                            Click "Test Full Pipeline" to generate skybox
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let groqCalls = 0;
+        let falCalls = 0;
+
+        function updateCostTracker() {
+            // Groq: ~$0.0006 per call (estimate for ~500 tokens)
+            // Fal.ai: ~$0.004 per image (1024x512)
+            const groqCost = groqCalls * 0.0006;
+            const falCost = falCalls * 0.004;
+            const totalCost = groqCost + falCost;
+
+            document.getElementById('groqCalls').textContent = `${groqCalls} ($${groqCost.toFixed(4)})`;
+            document.getElementById('falCalls').textContent = `${falCalls} ($${falCost.toFixed(4)})`;
+            document.getElementById('totalCost').innerHTML = `<strong>$${totalCost.toFixed(4)}</strong>`;
+        }
+
+        async function testParseOnly() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const promptText = document.getElementById('promptText').value;
+
+            if (!promptText.trim()) {
+                showError('Please enter a prompt text');
+                return;
+            }
+
+            showLoading('Parsing prompt with Groq AI...');
+            hideError();
+
+            try {
+                const startTime = Date.now();
+                const response = await fetch(`${apiUrl}/prompt/parse`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: promptText })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const parseTime = Date.now() - startTime;
+
+                groqCalls++;
+                updateCostTracker();
+
+                displayParseResults(data, parseTime);
+                document.getElementById('assetSection').style.display = 'none';
+                document.getElementById('assetPlaceholder').style.display = 'block';
+
+                hideLoading();
+            } catch (error) {
+                hideLoading();
+                showError(`Parse failed: ${error.message}`);
+            }
+        }
+
+        async function testPrompt() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const promptText = document.getElementById('promptText').value;
+
+            if (!promptText.trim()) {
+                showError('Please enter a prompt text');
+                return;
+            }
+
+            showLoading('Step 1/2: Parsing prompt with Groq AI...');
+            hideError();
+
+            try {
+                // Step 1: Parse
+                const parseStart = Date.now();
+                const parseResponse = await fetch(`${apiUrl}/prompt/parse`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: promptText })
+                });
+
+                if (!parseResponse.ok) {
+                    throw new Error(`Parse failed: HTTP ${parseResponse.status}`);
+                }
+
+                const parseData = await parseResponse.json();
+                const parseTime = Date.now() - parseStart;
+
+                groqCalls++;
+                updateCostTracker();
+
+                displayParseResults(parseData, parseTime);
+
+                // Step 2: Generate
+                showLoading('Step 2/2: Generating skybox with Fal.ai + Supabase (this may take 30 seconds)...');
+
+                const genStart = Date.now();
+                const styleResponse = await fetch(`${apiUrl}/style/byPromptId/${parseData.promptId}`);
+
+                if (!styleResponse.ok) {
+                    throw new Error(`Generation failed: HTTP ${styleResponse.status}`);
+                }
+
+                const styleData = await styleResponse.json();
+                const genTime = Date.now() - genStart;
+
+                falCalls++;
+                updateCostTracker();
+
+                displayStyleResults(styleData, genTime);
+
+                hideLoading();
+            } catch (error) {
+                hideLoading();
+                showError(`Test failed: ${error.message}`);
+            }
+        }
+
+        function displayParseResults(data, time) {
+            document.getElementById('results').classList.add('active');
+            document.getElementById('promptId').textContent = data.promptId;
+            document.getElementById('difficulty').textContent = data.difficulty;
+
+            // Palette
+            const paletteDiv = document.getElementById('palette');
+            paletteDiv.innerHTML = '';
+            data.palette.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.textContent = color;
+                paletteDiv.appendChild(swatch);
+            });
+
+            // Motifs
+            const motifsDiv = document.getElementById('motifs');
+            motifsDiv.innerHTML = '';
+            data.motifs.forEach(motif => {
+                const tag = document.createElement('span');
+                tag.className = 'motif-tag';
+                tag.textContent = motif;
+                motifsDiv.appendChild(tag);
+            });
+        }
+
+        function displayStyleResults(data, time) {
+            document.getElementById('assetSection').style.display = 'block';
+            document.getElementById('assetPlaceholder').style.display = 'none';
+            
+            // Display skybox
+            const skyboxUrlElement = document.getElementById('skyboxUrl');
+            skyboxUrlElement.textContent = data.skyboxUrl;
+            skyboxUrlElement.href = data.skyboxUrl;
+            const skyboxPreview = document.getElementById('skyboxPreview');
+            skyboxPreview.src = data.skyboxUrl;
+
+            // Display texture
+            const textureUrl = data.textureIds && data.textureIds[0] ? data.textureIds[0] : 'Not generated';
+            const textureUrlElement = document.getElementById('textureUrl');
+            if (textureUrl !== 'Not generated') {
+                textureUrlElement.textContent = textureUrl;
+                textureUrlElement.href = textureUrl;
+                textureUrlElement.style.display = 'inline';
+                const texturePreview = document.getElementById('texturePreview');
+                texturePreview.src = textureUrl;
+                texturePreview.style.display = 'block';
+            } else {
+                textureUrlElement.textContent = 'Texture not generated';
+                textureUrlElement.style.color = '#999';
+                textureUrlElement.style.display = 'inline';
+                document.getElementById('texturePreview').style.display = 'none';
+            }
+
+            document.getElementById('genTime').textContent = `${(time / 1000).toFixed(1)}s`;
+        }
+
+        function showLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('testBtn').disabled = true;
+            document.getElementById('parseOnlyBtn').disabled = true;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('active');
+            document.getElementById('testBtn').disabled = false;
+            document.getElementById('parseOnlyBtn').disabled = false;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
