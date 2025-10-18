@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
 export default function ParkourGame() {
   const mountRef = useRef(null);
@@ -19,6 +20,14 @@ export default function ParkourGame() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
+
+    // PointerLockControls for mouse look
+    const controls = new PointerLockControls(camera, renderer.domElement);
+    
+    // Click to enable pointer lock
+    renderer.domElement.addEventListener('click', () => {
+      controls.lock();
+    });
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -85,7 +94,7 @@ export default function ParkourGame() {
     const keys = {};
     window.addEventListener('keydown', (e) => {
       keys[e.key.toLowerCase()] = true;
-      if ((e.key === ' ' || e.key.toLowerCase() === 'w') && !isJumping) {
+      if ((e.key === ' ') && !isJumping) {
         velocity.y = jumpStrength;
         isJumping = true;
       }
@@ -94,9 +103,8 @@ export default function ParkourGame() {
       keys[e.key.toLowerCase()] = false;
     });
 
-    // Camera position
-    camera.position.set(0, 5, 10);
-    camera.lookAt(player.position);
+    // Camera position (first-person view)
+    camera.position.set(player.position.x, player.position.y + 0.3, player.position.z);
 
     // Collision detection
     const checkCollision = () => {
@@ -124,12 +132,30 @@ export default function ParkourGame() {
     const animate = () => {
       requestAnimationFrame(animate);
 
-      // Movement
+      // Movement relative to camera direction
       const moveDirection = new THREE.Vector3();
-      if (keys['a'] || keys['arrowleft']) moveDirection.x -= moveSpeed;
-      if (keys['d'] || keys['arrowright']) moveDirection.x += moveSpeed;
-      if (keys['s'] || keys['arrowdown']) moveDirection.z += moveSpeed;
-      if (keys['w'] || keys['arrowup']) moveDirection.z -= moveSpeed;
+      const forward = new THREE.Vector3();
+      const right = new THREE.Vector3();
+      
+      // Get camera direction
+      camera.getWorldDirection(forward);
+      forward.y = 0; // Keep movement horizontal
+      forward.normalize();
+      
+      right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+      if (keys['w'] || keys['arrowup']) {
+        moveDirection.add(forward.multiplyScalar(moveSpeed));
+      }
+      if (keys['s'] || keys['arrowdown']) {
+        moveDirection.add(forward.multiplyScalar(-moveSpeed));
+      }
+      if (keys['a'] || keys['arrowleft']) {
+        moveDirection.add(right.multiplyScalar(-moveSpeed));
+      }
+      if (keys['d'] || keys['arrowright']) {
+        moveDirection.add(right.multiplyScalar(moveSpeed));
+      }
 
       player.position.add(moveDirection);
 
@@ -156,11 +182,10 @@ export default function ParkourGame() {
         isJumping = false;
       }
 
-      // Camera follow
-      camera.position.x = player.position.x - 5;
-      camera.position.y = player.position.y + 5;
-      camera.position.z = player.position.z + 10;
-      camera.lookAt(player.position);
+      // Camera follow (first-person view) - only update position, not rotation
+      camera.position.x = player.position.x;
+      camera.position.y = player.position.y + 0.3;
+      camera.position.z = player.position.z;
 
       renderer.render(scene, camera);
     };
@@ -206,8 +231,10 @@ export default function ParkourGame() {
         </div>
         <div>Completions: {score}</div>
         <div style={{ marginTop: '10px', fontSize: '14px' }}>
+          <div>Click to enable mouse look</div>
           <div>WASD or Arrow Keys - Move</div>
           <div>Space or W - Jump</div>
+          <div>ESC - Release mouse</div>
         </div>
         {gameOver && (
           <div style={{ marginTop: '10px', color: '#ff6b6b', fontWeight: 'bold' }}>
