@@ -267,11 +267,12 @@ export default function ParkourGame() {
         }
       }
 
-      // Update score based on distance traveled (using platformSpacing for accurate counting)
+      // Update score based on distance traveled (only when landed on a platform)
       // Add offset so score updates at the start of each block, not halfway through
       const scoreOffset = Math.abs(platformSpacing) / 2; // Half a platform spacing
       const distanceScore = Math.floor(Math.max(0, startX - player.position.x + scoreOffset) / Math.abs(platformSpacing));
-      if (distanceScore > score) {
+      // Only update score when player is grounded (not jumping)
+      if (distanceScore > score && !isJumping) {
         setScore(distanceScore);
       }
 
