@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 // Import prompt service routes
 import promptRoutes from './routes/prompt';
 import styleRoutes from './routes/style';
+import voiceRoutes from './routes/voice';
 
 // Types
 interface Vector3 { x: number; y: number; z: number; }
@@ -33,6 +34,7 @@ app.use(bodyParser.json());
 // Add prompt service routes
 app.use('/prompt', promptRoutes);
 app.use('/style', styleRoutes);
+app.use('/voice', voiceRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
