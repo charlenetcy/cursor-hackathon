@@ -4,6 +4,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { io } from 'socket.io-client';
 import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
 import BackgroundPromptInput from './src/components/BackgroundPromptInput';
+import treesUrl from './assets/trees.jpg';
+import grassUrl from './assets/grass_dirt.png';
 
 export default function ParkourGame() {
   const mountRef = useRef(null);
@@ -38,10 +40,16 @@ export default function ParkourGame() {
     if (!mountRef.current) return;
 
     // Scene setup
-  const serverUrl = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
+    const isDev = import.meta.env.DEV;
+  const serverUrl = (import.meta.env.VITE_SERVER_URL ?? import.meta.env.VITE_BACKEND_URL ?? (isDev ? 'http://localhost:3001' : ''));
+    if (!serverUrl) {
+      console.error('[client] Missing server URL (set VITE_SERVER_URL)');
+      return;
+    }
     const scene = new THREE.Scene();
     const socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+      transports: isDev ? ['websocket', 'polling'] : ['polling', 'websocket'],
+      withCredentials: false,
     });
     
     // Create a large sphere for the background (skybox effect)
@@ -49,7 +57,7 @@ export default function ParkourGame() {
     textureLoaderRef.current = textureLoader; // Store ref for dynamic updates
     
     // Load default initial background
-    const initialImageUrl = './assets/trees.jpg';
+    const initialImageUrl = treesUrl;
     const textureBackground = textureLoader.load(initialImageUrl);
     
     const skyGeometry = new THREE.SphereGeometry(500, 60, 40);
@@ -72,6 +80,7 @@ export default function ParkourGame() {
     
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x87ceeb, 1);
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
 
@@ -111,7 +120,7 @@ export default function ParkourGame() {
     const moveSpeed = 0.18; // Slightly faster for bigger platforms
 
     // Platforms - server-authoritative
-    const texture = new THREE.TextureLoader().load( './assets/grass_dirt.png' );
+    const texture = new THREE.TextureLoader().load( grassUrl );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
 
