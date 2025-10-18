@@ -160,3 +160,79 @@ export interface ValidationResult {
   errors: string[];
   warnings: string[];
 }
+
+// Prompt-Driven Chunk Generation Contracts
+export interface IntentSpec {
+  biome?: string;
+  motifs?: string[];
+  difficultyCaps?: {
+    maxGap: number; // units
+    maxSlopeDeg: number; // degrees
+    maxRise: number; // units per step
+  };
+  weights?: {
+    rails: number;
+    wallruns: number;
+    corridors: number;
+    stairs: number;
+    ramps: number;
+  };
+  style?: {
+    palette?: string[];
+    skyboxHint?: string;
+    materials?: string[];
+    lighting?: string;
+  };
+}
+
+export interface BuildPlanStep {
+  type: string;
+  params: Record<string, string | number | boolean>;
+}
+
+export interface BuildPlan {
+  dsl: string; // human-readable DSL
+  steps: BuildPlanStep[];
+  repaired: boolean;
+}
+
+export type ConnectorFace = 'north' | 'south' | 'east' | 'west' | 'up' | 'down';
+
+export interface ConnectorSpec {
+  face: ConnectorFace;
+  position: Vector3;
+  clearance: number; // radius clearance at connector
+  type: 'flat' | 'ramp' | 'stairs';
+}
+
+export interface TextureJob {
+  id: string;
+  kind: 'palette' | 'skybox' | 'surface';
+  status: 'queued' | 'ready' | 'failed';
+  hash: string;
+  url?: string;
+}
+
+export interface ChunkBundle {
+  intent: IntentSpec;
+  buildPlan: BuildPlan;
+  layout: Chunk; // geometry + physics
+  solution: { pathCheckpoints: Vector3[] };
+  entry: ConnectorSpec;
+  exit: ConnectorSpec;
+  style: { palette: string[]; skyboxUrl?: string };
+  textureJobs: TextureJob[];
+}
+
+export interface GenerateNextChunkRequest {
+  prompt: string;
+  worldSeed: string;
+  chunkIndex: number;
+  entry: ConnectorSpec;
+  chunkSize?: number;
+}
+
+export interface GenerateNextChunkResponse {
+  bundle: ChunkBundle;
+  promptId: string;
+}

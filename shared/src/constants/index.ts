@@ -25,6 +25,7 @@ export const GENERATION_CONFIG = {
   FALLBACK_TEXTURE_ID: 'tx_default_001',
   MAX_CHUNKS_PER_PROMPT: 5,
   MIN_CHUNKS_PER_PROMPT: 3,
+  DEFAULT_PROMPT: 'balanced difficulty rooftop course, medium ramps, some stairs',
 } as const;
 
 export const VALIDATION_CONFIG = {

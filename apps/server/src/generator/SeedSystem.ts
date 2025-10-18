@@ -1,6 +1,14 @@
 import { createHash } from 'crypto';
 import seedrandom from 'seedrandom';
-import { GenerationParams } from '../../shared/src/types';
+
+/**
+ * Generation Parameters
+ */
+export interface GenerationParams {
+  worldSeed: string;
+  promptId: string;
+  chunkIndex: number;
+}
 
 /**
  * Cryptographic-grade deterministic seed hashing
