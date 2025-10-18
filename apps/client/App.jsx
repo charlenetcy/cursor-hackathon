@@ -4,6 +4,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { io } from 'socket.io-client';
 import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
 import BackgroundPromptInput from './src/components/BackgroundPromptInput';
+import BrainrotPromptInput from './src/components/BrainrotPromptInput';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import characterModelUrl from './assets/model.glb';
 import treesUrl from './assets/trees.jpg';
@@ -32,6 +33,11 @@ export default function ParkourGame() {
   const [avatarStatus, setAvatarStatus] = useState('idle');
   const [avatarError, setAvatarError] = useState(null);
   const applyAvatarForPlayerRef = useRef(null);
+  
+  // Brainrot prompt state
+  const [brainrotStatus, setBrainrotStatus] = useState('idle');
+  const [brainrotError, setBrainrotError] = useState(null);
+  const brainrotAudioRef = useRef(null);
 
   // Handle background generation - receives both skybox and texture URLs
   const handleBackgroundReady = (skyboxUrl, textureUrl) => {
@@ -86,6 +92,81 @@ export default function ParkourGame() {
   };
 
   const { status, error: genError, progress, generateBackground, reset: resetGeneration } = useBackgroundGeneration(handleBackgroundReady);
+
+  // Handle brainrot script generation - ONLY AI mode plays audio
+  const handleBrainrotPrompt = async (prompt, mode = 'ai') => {
+    setBrainrotStatus('generating');
+    setBrainrotError(null);
+    
+    try {
+      console.log(`🎤 Generating brainrot voice for ${mode} mode:`, prompt);
+      
+      const isDev = import.meta.env.DEV;
+      const serverUrl = (import.meta.env.VITE_SERVER_URL ?? import.meta.env.VITE_BACKEND_URL ?? (isDev ? 'http://localhost:3001' : ''));
+      
+      // Only generate and play audio for AI mode
+      if (mode === 'ai') {
+        const requestBody = { prompt };
+        
+        const response = await fetch(`${serverUrl}/voice/brainrot`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+      const blob = await response.blob();
+      // Stop any currently playing brainrot audio
+      try {
+        if (brainrotAudioRef.current) {
+          brainrotAudioRef.current.pause();
+          brainrotAudioRef.current.currentTime = 0;
+        }
+      } catch {}
+      const audio = new Audio(URL.createObjectURL(blob));
+      brainrotAudioRef.current = audio;
+      // Play the audio (new one only)
+      await audio.play();
+        
+        // Broadcast to all players via server
+        if (socketRef.current) {
+          console.log('📡 Broadcasting AI brainrot voice to all players');
+          socketRef.current.emit('brainrot_voice', { 
+            script: prompt, 
+            mode,
+            timestamp: Date.now()
+          });
+        }
+      } else {
+        // Custom mode - just show success without playing audio
+        console.log('📝 Custom script mode - no audio playback');
+        setBrainrotStatus('success');
+        
+        // Reset status after 2 seconds for custom mode
+        setTimeout(() => {
+          setBrainrotStatus('idle');
+        }, 2000);
+        return;
+      }
+      
+      setBrainrotStatus('success');
+      
+      // Reset status after 3 seconds
+      setTimeout(() => {
+        setBrainrotStatus('idle');
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Brainrot voice generation error:', error);
+      setBrainrotError(error.message || 'Failed to generate brainrot voice');
+      setBrainrotStatus('idle');
+    }
+  };
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -567,21 +648,60 @@ export default function ParkourGame() {
       }
     });
 
-    socket.on('player_avatar', ({ id, avatar }) => {
-      applyAvatarForPlayer(id, avatar);
+    // Brainrot voice handler - ONLY play AI-generated scripts from other players
+    // Simple dedupe: avoid replaying the same script within a short window
+    let lastBrainrot = { text: '', at: 0 };
+    socket.on('brainrot_voice_update', async (data) => {
+      const { script, mode } = data;
+      console.log(`🎤 Received brainrot voice update from another player (${mode} mode):`, script?.substring(0, 100) + '...');
+      
+      // Only play AI-generated scripts, skip custom scripts
+      if (mode !== 'ai') {
+        console.log('📝 Skipping custom script - only AI scripts play audio');
+        return;
+      }
+
+      // Dedupe guard: skip if identical script arrived within the last 4 seconds
+      const now = Date.now();
+      if (lastBrainrot.text === script && now - lastBrainrot.at < 4000) {
+        console.log('⏭️ Skipping duplicate AI brainrot playback');
+        return;
+      }
+      lastBrainrot = { text: script, at: now };
+      
+      try {
+        const isDev = import.meta.env.DEV;
+        const serverUrl = (import.meta.env.VITE_SERVER_URL ?? import.meta.env.VITE_BACKEND_URL ?? (isDev ? 'http://localhost:3001' : ''));
+        
+        const requestBody = { prompt: script };
+        
+        const response = await fetch(`${serverUrl}/voice/brainrot`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          // Stop any currently playing brainrot audio
+          try {
+            if (brainrotAudioRef.current) {
+              brainrotAudioRef.current.pause();
+              brainrotAudioRef.current.currentTime = 0;
+            }
+          } catch {}
+          const audio = new Audio(URL.createObjectURL(blob));
+          brainrotAudioRef.current = audio;
+          await audio.play();
+          console.log('🎤 Played AI brainrot voice from another player');
+        }
+      } catch (error) {
+        console.error('❌ Failed to play brainrot voice from other player:', error);
+      }
     });
 
-    // 🎤 Random voice timer - plays a random phrase every 15 seconds
-    const voiceInterval = setInterval(() => {
-      console.log('🎤 Playing random voice line...');
-      fetch(`${serverUrl}/voice/random`)
-        .then(r => r.blob())
-        .then(blob => {
-          const audio = new Audio(URL.createObjectURL(blob));
-          audio.play().catch(e => console.log('Audio play failed:', e));
-        })
-        .catch(e => console.log('Voice fetch failed:', e));
-    }, 15000); // Every 15 seconds
     // Authoritative state updates for other players
     socket.on('state', (data) => {
       if (!data || !Array.isArray(data.players)) return;
@@ -730,9 +850,30 @@ export default function ParkourGame() {
     };
     window.addEventListener('resize', handleResize);
 
+    // 🎤 Random voice timer - DISABLED to avoid conflicts with brainrot scripts
+    // const voiceInterval = setInterval(() => {
+    //   console.log('🎤 Playing random voice line...');
+    //   fetch(`${serverUrl}/voice/random`)
+    //     .then(response => response.blob())
+    //     .then(blob => {
+    //       const audio = new Audio(URL.createObjectURL(blob));
+    //       audio.play().catch(e => console.log('Audio play failed:', e));
+    //     })
+    //     .catch(e => console.log('Voice fetch failed:', e));
+    // }, 15000); // 15 seconds
+    const voiceInterval = null; // No random voice timer
+
     // Cleanup
     return () => {
-      clearInterval(voiceInterval); // Stop voice timer
+      if (voiceInterval) clearInterval(voiceInterval); // Stop voice timer if it exists
+      // Stop any brainrot audio still playing
+      try {
+        if (brainrotAudioRef.current) {
+          brainrotAudioRef.current.pause();
+          brainrotAudioRef.current.currentTime = 0;
+          brainrotAudioRef.current = null;
+        }
+      } catch {}
       socket.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', () => {});
@@ -755,6 +896,13 @@ export default function ParkourGame() {
         status={status}
         progress={progress}
         error={genError}
+      />
+      
+      {/* Brainrot Script UI */}
+      <BrainrotPromptInput
+        onSubmit={handleBrainrotPrompt}
+        status={brainrotStatus}
+        error={brainrotError}
       />
       
       <div style={{

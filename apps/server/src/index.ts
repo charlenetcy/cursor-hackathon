@@ -205,6 +205,18 @@ io.on('connection', (socket) => {
     });
     console.log(`[Server] Broadcasted background_update to all clients`);
   });
+
+  // Brainrot voice handler - broadcast to all other clients (not sender)
+  socket.on('brainrot_voice', (data) => {
+    console.log(`[Server] Received brainrot_voice from ${socket.id} (${data.mode} mode):`, data.script?.substring(0, 100) + '...');
+    // Broadcast to all clients EXCEPT the sender to avoid double playback
+    socket.broadcast.emit('brainrot_voice_update', {
+      script: data.script,
+      mode: data.mode || 'ai',
+      timestamp: Date.now()
+    });
+    console.log(`[Server] Broadcasted brainrot_voice_update to other clients`);
+  });
 });
 
 // No REST endpoints needed for platform mode
