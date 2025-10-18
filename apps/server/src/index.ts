@@ -12,7 +12,16 @@ import styleRoutes from './routes/style';
 // Types
 interface Vector3 { x: number; y: number; z: number; }
 interface PlayerInput { forward: boolean; backward: boolean; left: boolean; right: boolean; jump: boolean; sprint: boolean; yaw?: number; }
-interface PlayerState { id: string; name: string; position: Vector3; velocity: Vector3; rotation: Vector3; timestamp: number; }
+interface AvatarDescriptor {
+  type: 'box' | 'minecraft_skin' | 'generated';
+  // For minecraft_skin
+  url?: string;
+  // For generated (legacy)
+  promptId?: string;
+  // Fallback color for box
+  color?: number;
+}
+interface PlayerState { id: string; name: string; position: Vector3; velocity: Vector3; rotation: Vector3; timestamp: number; avatar?: AvatarDescriptor; }
 interface Platform { id: string; position: Vector3; isSpecial?: boolean; }
 interface ClientState { position: Vector3; yaw: number; }
 
@@ -110,6 +119,7 @@ function createPlayer(id: string, name: string): PlayerState {
     velocity: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
     timestamp: Date.now(),
+    avatar: { type: 'box', color: 0x00ff7f },
   };
 }
 
@@ -153,6 +163,29 @@ io.on('connection', (socket) => {
         io.emit('platforms_add', { apiVersion: 'v1', platforms: newPlatforms });
       }
     }
+  });
+
+  // Avatar updates: accept minecraft_skin URL (public PNG) or fallback box
+  socket.on('avatar_update', (avatar: AvatarDescriptor) => {
+    const player = playerIdToState.get(socket.id);
+    if (!player) return;
+
+    if (!avatar || (avatar.type !== 'box' && avatar.type !== 'minecraft_skin' && avatar.type !== 'generated')) return;
+
+    if (avatar.type === 'minecraft_skin') {
+      if (!avatar.url || typeof avatar.url !== 'string') return;
+      const isPng = avatar.url.toLowerCase().includes('.png') || avatar.url.toLowerCase().includes('image/png');
+      if (!isPng) return;
+      player.avatar = { type: 'minecraft_skin', url: avatar.url };
+    } else if (avatar.type === 'box') {
+      player.avatar = { type: 'box', color: typeof avatar.color === 'number' ? avatar.color : 0x00ff7f };
+    } else if (avatar.type === 'generated') {
+      if (!avatar.promptId) return;
+      player.avatar = { type: 'generated', promptId: avatar.promptId };
+    }
+
+    // Broadcast to everyone
+    io.emit('player_avatar', { id: player.id, avatar: player.avatar });
   });
 
   socket.on('disconnect', () => {

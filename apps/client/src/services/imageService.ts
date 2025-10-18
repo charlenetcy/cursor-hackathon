@@ -8,6 +8,41 @@ export interface BackgroundImage {
   created_at?: string;
 }
 
+export async function uploadPngToBucket(
+  file: File,
+  bucketName: string = 'game-assets',
+  folderPath: string = 'skins'
+): Promise<string | null> {
+  try {
+    if (!supabase) {
+      console.warn('Supabase not configured; uploadPngToBucket returning null');
+      return null;
+    }
+    if (!file || file.type !== 'image/png') {
+      console.error('Only PNG files are supported');
+      return null;
+    }
+
+    const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
+    const path = folderPath ? `${folderPath}/${fileName}` : fileName;
+
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .upload(path, file, { cacheControl: 'public, max-age=31536000', upsert: false, contentType: 'image/png' });
+
+    if (error) {
+      console.error('Error uploading PNG:', error);
+      return null;
+    }
+
+    const { data } = supabase.storage.from(bucketName).getPublicUrl(path);
+    return data.publicUrl;
+  } catch (e) {
+    console.error('uploadPngToBucket error:', e);
+    return null;
+  }
+}
+
 /**
  * Fetches background images from Supabase storage
  * @param bucketName - The name of the Supabase storage bucket

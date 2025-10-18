@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function AvatarPromptInput({ onSubmit, status, error }) {
   const [prompt, setPrompt] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [file, setFile] = useState(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -34,19 +35,23 @@ export default function AvatarPromptInput({ onSubmit, status, error }) {
               ×
             </button>
           </div>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ color: '#ddd', fontSize: 12 }}>Upload a Minecraft skin PNG (64x64 or 64x32)</label>
             <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe your avatar (e.g., cyber ninja)"
+              type="file"
+              accept="image/png"
               disabled={isBusy}
-              style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #555', width: 240, background: 'rgba(255,255,255,0.9)' }}
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              style={{ color: '#ccc' }}
             />
-            <button type="submit" disabled={!prompt.trim() || isBusy} style={{ padding: '8px 12px', borderRadius: 6, border: 'none', background: isBusy ? '#777' : '#7c3aed', color: 'white', fontWeight: 600, cursor: isBusy ? 'not-allowed' : 'pointer' }}>
-              {isBusy ? 'Generating…' : 'Apply'}
+            <button
+              onClick={() => file && onSubmit(file)}
+              disabled={!file || isBusy}
+              style={{ padding: '8px 12px', borderRadius: 6, border: 'none', background: isBusy ? '#777' : '#7c3aed', color: 'white', fontWeight: 600, cursor: isBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {isBusy ? 'Uploading…' : 'Apply Skin'}
             </button>
-          </form>
+          </div>
           {error && (
             <div style={{ marginTop: 6, color: '#ff6b6b', fontSize: 12 }}>❌ {error}</div>
           )}

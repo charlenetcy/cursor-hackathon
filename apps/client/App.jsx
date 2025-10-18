@@ -4,6 +4,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { io } from 'socket.io-client';
 import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
 import BackgroundPromptInput from './src/components/BackgroundPromptInput';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import characterModelUrl from './assets/model.glb';
 import treesUrl from './assets/trees.jpg';
 import grassUrl from './assets/grass_dirt.png';
 
@@ -26,6 +28,10 @@ export default function ParkourGame() {
   const sceneRef = useRef(null);
   const localPlayerIdRef = useRef(null);
   const socketRef = useRef(null);
+  const characterModelRef = useRef(null);
+  const [avatarStatus, setAvatarStatus] = useState('idle');
+  const [avatarError, setAvatarError] = useState(null);
+  const applyAvatarForPlayerRef = useRef(null);
 
   // Handle background generation - receives both skybox and texture URLs
   const handleBackgroundReady = (skyboxUrl, textureUrl) => {
@@ -162,12 +168,16 @@ export default function ParkourGame() {
     dirLight.shadow.camera.bottom = -20;
     scene.add(dirLight);
 
-    // Player (adjusted for 1.5 sized blocks)
-    const playerGeometry = new THREE.BoxGeometry(0.6, 1.2, 0.6);
-    const playerMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-    const player = new THREE.Mesh(playerGeometry, playerMaterial);
-    player.castShadow = true;
-    player.position.set(0, 1.35, 0); // Adjusted to spawn on first 1.5-sized platform
+    // Player root with invisible collider; visual model attaches later
+    const player = new THREE.Group();
+    const collider = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 1.2, 0.6),
+      new THREE.MeshPhongMaterial({ color: 0xff0000, visible: false })
+    );
+    collider.castShadow = true;
+    collider.name = 'player_collider';
+    player.add(collider);
+    player.position.set(0, 1.35, 0);
     scene.add(player);
 
     // Player physics (adjusted for 1.5 sized blocks)
@@ -210,6 +220,41 @@ export default function ParkourGame() {
     
     // Local helper no longer used (server streams platforms)
 
+    // Fixed character model loader
+    const loader = new GLTFLoader();
+    const fixedModelUrl = (import.meta.env.VITE_CHARACTER_MODEL_URL || characterModelUrl);
+    loader.load(
+      fixedModelUrl,
+      (gltf) => {
+        characterModelRef.current = gltf.scene;
+        // Attach to any already-spawned remote players (local player stays first-person only)
+        for (const [, grp] of otherPlayers.entries()) {
+          attachCharacterTo(grp);
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn('Failed to load character model, fallback to invisible collider only', err);
+      }
+    );
+
+    const attachCharacterTo = (group) => {
+      if (!characterModelRef.current) return;
+      if (group.userData && group.userData.hasCharacter) return;
+      const instance = characterModelRef.current.clone(true);
+      // Fit model height to 2 blocks (each block is 1.5 → total 3.0 units)
+      const box = new THREE.Box3().setFromObject(instance);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const targetHeight = 2.25; // 1.5 blocks tall (blocks are 1.5 units)
+      const s = targetHeight / (size.y || 1);
+      instance.scale.setScalar(s);
+      instance.position.set(0, 0, 0);
+      instance.traverse((n) => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
+      group.add(instance);
+      group.userData.hasCharacter = true;
+    };
+
     // Server initial platforms
     const upsertPlatforms = (list) => {
       for (const p of list) {
@@ -224,6 +269,100 @@ export default function ParkourGame() {
         platforms.set(p.id, mesh);
       }
     };
+
+    // Avatar visuals (per-player Three.js groups)
+    const avatarVisuals = new Map();
+
+    function buildMinecraftPlayerMesh(texture) {
+      const group = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat);
+      head.position.set(0, 1.6, 0);
+      group.add(head);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.4), mat);
+      body.position.set(0, 0.8, 0);
+      group.add(body);
+      const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), mat);
+      leftArm.position.set(-0.6, 0.8, 0);
+      group.add(leftArm);
+      const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), mat);
+      rightArm.position.set(0.6, 0.8, 0);
+      group.add(rightArm);
+      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), mat);
+      leftLeg.position.set(-0.2, 0.2, 0);
+      group.add(leftLeg);
+      const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), mat);
+      rightLeg.position.set(0.2, 0.2, 0);
+      group.add(rightLeg);
+      return group;
+    }
+
+    const materialFromColor = (color) => new THREE.MeshPhongMaterial({ color: color ?? 0x00ff7f });
+
+    const loadAvatarMaterialForPrompt = async (promptId) => {
+      if (!promptId) return materialFromColor(0x00ff7f);
+      try {
+        const res = await fetch(`${serverUrl}/style/byPromptId/${promptId}`);
+        if (!res.ok) throw new Error('style fetch failed');
+        const styleData = await res.json();
+        const textureUrl = styleData.textureIds?.[0];
+        if (!textureUrl || !textureLoaderRef.current) return materialFromColor(0x00ff7f);
+        const texture = await new Promise((resolve, reject) => {
+          const t = textureLoaderRef.current.load(textureUrl, () => resolve(t), undefined, reject);
+          t.colorSpace = THREE.SRGBColorSpace;
+          t.wrapS = THREE.RepeatWrapping;
+          t.wrapT = THREE.RepeatWrapping;
+          t.magFilter = THREE.NearestFilter;
+        });
+        const mat = new THREE.MeshPhongMaterial({ map: texture });
+        return mat;
+      } catch {
+        return materialFromColor(0x00ff7f);
+      }
+    };
+
+    const applyAvatarForPlayer = async (playerId, avatar) => {
+      const isLocal = playerId === localPlayerIdRef.current;
+      const baseMesh = isLocal ? player : otherPlayers.get(playerId);
+      if (!baseMesh) return;
+
+      // Remove existing visual if present
+      const existingVisual = avatarVisuals.get(playerId);
+      if (existingVisual) {
+        baseMesh.remove(existingVisual);
+        avatarVisuals.delete(playerId);
+      }
+
+      if (!avatar || avatar.type === 'box') {
+        baseMesh.material = materialFromColor(avatar?.color ?? (isLocal ? 0xff0000 : 0x00ff7f));
+        return;
+      }
+
+      if (avatar.type === 'generated' && avatar.promptId) {
+        const mat = await loadAvatarMaterialForPrompt(avatar.promptId);
+        baseMesh.material = mat;
+        baseMesh.material.needsUpdate = true;
+        return;
+      }
+
+      if (avatar.type === 'minecraft_skin' && avatar.url) {
+        try {
+          const texture = await new Promise((resolve, reject) => {
+            const t = textureLoaderRef.current.load(avatar.url, () => resolve(t), undefined, reject);
+            t.colorSpace = THREE.SRGBColorSpace;
+            t.magFilter = THREE.NearestFilter;
+          });
+          const visual = buildMinecraftPlayerMesh(texture);
+          baseMesh.add(visual);
+          avatarVisuals.set(playerId, visual);
+        } catch (e) {
+          console.error('Failed to load skin texture', e);
+        }
+      }
+    };
+
+    // Expose to outer scope via ref so upload handler can call it
+    applyAvatarForPlayerRef.current = applyAvatarForPlayer;
 
     // Ground (death zone) - Make it large for infinite mode
     const groundGeometry = new THREE.PlaneGeometry(10000, 100);
@@ -272,7 +411,8 @@ export default function ParkourGame() {
 
     // Collision detection (adjusted for 1.5 sized blocks)
     const checkCollision = () => {
-      const playerBox = new THREE.Box3().setFromObject(player);
+      const collider = player.getObjectByName('player_collider');
+      const playerBox = new THREE.Box3().setFromObject(collider || player);
       
       for (const platform of platforms.values()) {
         const platformBox = new THREE.Box3().setFromObject(platform);
@@ -357,16 +497,20 @@ export default function ParkourGame() {
       // Seed existing other players
       if (Array.isArray(data.players)) {
         for (const p of data.players) {
-          if (p.id === localPlayerIdRef.current) continue;
+          if (p.id === localPlayerIdRef.current) continue; // never render local visual
           if (!otherPlayers.has(p.id)) {
-            const mesh = new THREE.Mesh(
+            const group = new THREE.Group();
+            const oc = new THREE.Mesh(
               new THREE.BoxGeometry(0.6, 1.2, 0.6),
-              new THREE.MeshPhongMaterial({ color: 0x00ff7f })
+              new THREE.MeshPhongMaterial({ visible: false })
             );
-            mesh.castShadow = true;
-            mesh.position.set(p.position.x, p.position.y, p.position.z);
-            scene.add(mesh);
-            otherPlayers.set(p.id, mesh);
+            oc.castShadow = true;
+            oc.name = 'player_collider';
+            group.add(oc);
+            group.position.set(p.position.x, p.position.y, p.position.z);
+            attachCharacterTo(group);
+            scene.add(group);
+            otherPlayers.set(p.id, group);
           }
         }
       }
@@ -423,20 +567,28 @@ export default function ParkourGame() {
       }
     });
 
+    socket.on('player_avatar', ({ id, avatar }) => {
+      applyAvatarForPlayer(id, avatar);
+    });
+
     // Authoritative state updates for other players
     socket.on('state', (data) => {
       if (!data || !Array.isArray(data.players)) return;
       const seen = new Set();
       for (const p of data.players) {
-        if (p.id === localPlayerIdRef.current) continue;
+        if (p.id === localPlayerIdRef.current) continue; // never render local visual
         seen.add(p.id);
         let mesh = otherPlayers.get(p.id);
         if (!mesh) {
-          mesh = new THREE.Mesh(
+          mesh = new THREE.Group();
+          const oc = new THREE.Mesh(
             new THREE.BoxGeometry(0.6, 1.2, 0.6),
-            new THREE.MeshPhongMaterial({ color: 0x00ff7f })
+            new THREE.MeshPhongMaterial({ visible: false })
           );
-          mesh.castShadow = true;
+          oc.castShadow = true;
+          oc.name = 'player_collider';
+          mesh.add(oc);
+          attachCharacterTo(mesh);
           scene.add(mesh);
           otherPlayers.set(p.id, mesh);
         }
@@ -578,6 +730,8 @@ export default function ParkourGame() {
     };
   }, []);
 
+  // No avatar upload anymore; fixed model is used for all players
+
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
       <div ref={mountRef} />
@@ -623,6 +777,7 @@ export default function ParkourGame() {
           Platforms generate infinitely!
         </div>
       </div>
+      
       <div style={{
         position: 'absolute',
         bottom: 20,
