@@ -105,24 +105,39 @@ export default function ParkourGame() {
     const moveSpeed = 0.18; // Slightly faster for bigger platforms
 
     // Platforms - Infinite generation system
-    const texture = new THREE.TextureLoader().load( './assets/grass_dirt.png' );
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.magFilter = THREE.NearestFilter;
+    const platformTextureLoader = new THREE.TextureLoader();
+    
+    // Load textures for sides and top
+    const grassDirtTexture = platformTextureLoader.load( './assets/grass_dirt.png' );
+    grassDirtTexture.colorSpace = THREE.SRGBColorSpace;
+    grassDirtTexture.magFilter = THREE.NearestFilter;
+    
+    const grassTexture = platformTextureLoader.load( './assets/grass.png' );
+    grassTexture.colorSpace = THREE.SRGBColorSpace;
+    grassTexture.magFilter = THREE.NearestFilter;
 
     const platforms = [];
     const platformGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
     
     // Shared materials for all platforms (more memory efficient)
-    const regularMaterial = new THREE.MeshLambertMaterial({ 
-      map: texture, 
-      side: THREE.DoubleSide,
-      emissive: 0x000000
-    });
-    const specialMaterial = new THREE.MeshLambertMaterial({ 
-      map: texture, 
-      side: THREE.DoubleSide,
-      emissive: 0x664400 // Special platforms glow
-    });
+    // BoxGeometry faces: [right, left, top, bottom, front, back]
+    const regularMaterials = [
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x000000 }), // right
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x000000 }), // left
+      new THREE.MeshLambertMaterial({ map: grassTexture, side: THREE.DoubleSide, emissive: 0x000000 }), // top (grass)
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x000000 }), // bottom
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x000000 }), // front
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x000000 })  // back
+    ];
+    
+    const specialMaterials = [
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x664400 }), // right
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x664400 }), // left
+      new THREE.MeshLambertMaterial({ map: grassTexture, side: THREE.DoubleSide, emissive: 0x664400 }), // top (grass)
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x664400 }), // bottom
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x664400 }), // front
+      new THREE.MeshLambertMaterial({ map: grassDirtTexture, side: THREE.DoubleSide, emissive: 0x664400 })  // back
+    ];
     
     // Track generation progress (adjusted for 1.5 sized blocks)
     let lastGeneratedX = 0;
@@ -134,8 +149,8 @@ export default function ParkourGame() {
     
     // Create a single platform
     const createPlatform = (x, y, z, isSpecial = false) => {
-      const material = isSpecial ? specialMaterial : regularMaterial;
-      const platform = new THREE.Mesh(platformGeometry, material);
+      const materials = isSpecial ? specialMaterials : regularMaterials;
+      const platform = new THREE.Mesh(platformGeometry, materials);
       platform.receiveShadow = true;
       platform.castShadow = true;
       platform.position.set(x, y, z);
@@ -199,6 +214,15 @@ export default function ParkourGame() {
     // Controls
     const keys = {};
     window.addEventListener('keydown', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
+      
       keys[e.key.toLowerCase()] = true;
       if ((e.key === ' ') && !isJumping) {
         velocity.y = jumpStrength;
@@ -206,6 +230,15 @@ export default function ParkourGame() {
       }
     });
     window.addEventListener('keyup', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
+      
       keys[e.key.toLowerCase()] = false;
     });
 
@@ -340,11 +373,6 @@ export default function ParkourGame() {
         generateChunk(secondChunkStart);
         const thirdChunkStart = lastGeneratedX;
         generateChunk(thirdChunkStart);
-        
-        // Hide "You fell!" message after 2 seconds
-        setTimeout(() => {
-          setGameOver(false);
-        }, 2000);
       }
 
       // Camera follow (first-person view at eye level) - only update position, not rotation
@@ -420,22 +448,6 @@ export default function ParkourGame() {
         <div style={{ marginTop: '10px', fontSize: '12px', opacity: 0.7 }}>
           Platforms generate infinitely!
         </div>
-        {gameOver && (
-          <div style={{ 
-            marginTop: '10px', 
-            padding: '10px',
-            backgroundColor: 'rgba(255, 107, 107, 0.3)',
-            borderRadius: '5px',
-            border: '2px solid #ff6b6b'
-          }}>
-            <div style={{ color: '#ff6b6b', fontWeight: 'bold', fontSize: '18px' }}>
-              You fell!
-            </div>
-            <div style={{ color: '#fff', marginTop: '5px' }}>
-              Restarting in 2s...
-            </div>
-          </div>
-        )}
       </div>
       <div style={{
         position: 'absolute',
