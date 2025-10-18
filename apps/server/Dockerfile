@@ -7,29 +7,29 @@ WORKDIR /app
 # Install build tooling
 RUN apk add --no-cache python3 make g++
 
-# Copy monorepo manifests to leverage Docker cache
+# Copy server manifests
 COPY package*.json ./
-COPY apps/server/package.json ./apps/server/package.json
 
-# Install root deps (for workspace hoisting) and server deps
-RUN npm install
+# Install deps (dev deps included for build)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Copy source
-COPY apps/server ./apps/server
+# Copy server source
+COPY . .
 
-# Build shared then server
-RUN npm run --workspace @cursor-hackathon/server build
+# Build server
+RUN npm run build
 
 # ---- Runtime ----
 FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Copy only runtime artifacts
-COPY --from=builder /app/apps/server/dist ./dist
-COPY --from=builder /app/apps/server/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/server/node_modules ./node_modules
+# Copy runtime artifacts
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+
+# Install only production deps
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
 # Expose Heroku dyno port
 ENV PORT=3001
