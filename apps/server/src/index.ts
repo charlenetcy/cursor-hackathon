@@ -15,7 +15,7 @@ interface ClientState { position: Vector3; yaw: number; }
 // Config
 const TICK_RATE = 10; // Hz (broadcast cadence)
 const DT = 0; // no server-side physics for client-driven mode
-const PORT = 3001;
+const PORT = Number(process.env.PORT || 3001);
 // Platform generation config (mirrors client logic in App.jsx)
 const PLATFORM_CHUNK_SIZE = 4;
 const PLATFORM_SPACING = -7; // grow towards -X
