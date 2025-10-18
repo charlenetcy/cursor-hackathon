@@ -132,6 +132,7 @@ export default function ParkourGame() {
     
     // Track state
     let startX = 0; // Track starting position for score calculation
+    let maxDistanceReached = 0; // Track the maximum distance reached to prevent score from decreasing
     const removalDistance = 35; // Remove platforms this far behind player
     const PLATFORM_SPACING = 7; // Distance between platforms (matches server spacing)
     
@@ -168,6 +169,14 @@ export default function ParkourGame() {
     // Controls
     const keys = {};
     window.addEventListener('keydown', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
       keys[e.key.toLowerCase()] = true;
       if ((e.key === ' ') && !isJumping) {
         velocity.y = jumpStrength;
@@ -175,6 +184,14 @@ export default function ParkourGame() {
       }
     });
     window.addEventListener('keyup', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
       keys[e.key.toLowerCase()] = false;
     });
 
@@ -244,10 +261,12 @@ export default function ParkourGame() {
           firstPlatform.position.z
         );
         startX = firstPlatform.position.x; // Update startX for score calculation
+        maxDistanceReached = 0; // Reset max distance for new run
       } else {
         // Fallback to origin if no platforms exist yet
         player.position.set(0, 1.35, 0);
         startX = 0;
+        maxDistanceReached = 0;
       }
       velocity.set(0, 0, 0);
       isJumping = false;
@@ -368,9 +387,20 @@ export default function ParkourGame() {
       }
 
       // Update score based on number of blocks passed (platforms are spaced PLATFORM_SPACING apart)
-      const distanceScore = Math.floor(Math.max(0, (startX - player.position.x) / PLATFORM_SPACING));
-      // Only update score when player is grounded (not jumping)
-      if (distanceScore > score && !isJumping) {
+      // Calculate distance traveled from start
+      const distanceTraveled = startX - player.position.x;
+      
+      // Update max distance to ensure score never decreases during a run
+      if (distanceTraveled > maxDistanceReached) {
+        maxDistanceReached = distanceTraveled;
+      }
+      
+      // Calculate score based on max distance reached, adding 0.5 offset so score increments 
+      // when player reaches the center of each platform (more intuitive)
+      const distanceScore = Math.floor(Math.max(0, (maxDistanceReached + (PLATFORM_SPACING * 0.2)) / PLATFORM_SPACING));
+      
+      // Update score (continuously, even when jumping)
+      if (distanceScore > score) {
         setScore(distanceScore);
       }
 
