@@ -17,11 +17,25 @@ export default function ParkourGame() {
 
     // Scene setup
     const scene = new THREE.Scene();
-    const textureBackground = new THREE.TextureLoader().load( './assets/deepfried.jpg' );
-
-    scene.background = textureBackground;
+    
+    // Create a large sphere for the background (skybox effect)
+    const textureBackground = new THREE.TextureLoader().load( './assets/forest.jpg' );
+    const skyGeometry = new THREE.SphereGeometry(500, 60, 40);
+    // Flip the sphere inside-out so we see the texture from inside
+    skyGeometry.scale(-1, 1, 1);
+    const skyMaterial = new THREE.MeshBasicMaterial({ 
+      map: textureBackground,
+      fog: false // Don't let fog affect the skybox
+    });
+    const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+    scene.add(sky);
+    
     scene.fog = new THREE.Fog(0x87ceeb, 50, 150); // Start fog at distance 50 instead of 0
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    
+    // Set initial camera rotation to look towards negative X (where blocks grow)
+    camera.rotation.y = Math.PI / 2; // -90 degrees to look left (towards -X)
+    
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
@@ -86,7 +100,7 @@ export default function ParkourGame() {
     let lastGeneratedX = 0;
     let startX = 0; // Track starting position for score calculation
     const chunkSize = 4; // Number of platforms per chunk
-    const platformSpacing = 7; // Distance between platform centers (1.5 gap)
+    const platformSpacing = -7; // Distance between platform centers (negative = grow towards -X)
     const generationDistance = 50; // Generate when player is within this distance
     const removalDistance = 35; // Remove platforms this far behind player
     
@@ -238,15 +252,15 @@ export default function ParkourGame() {
       // Check collisions
       checkCollision();
 
-      // Infinite generation: Generate new chunks ahead
-      if (player.position.x > lastGeneratedX - generationDistance) {
+      // Infinite generation: Generate new chunks ahead (in negative X direction)
+      if (player.position.x < lastGeneratedX + generationDistance) {
         generateChunk(lastGeneratedX);
       }
 
       // Remove old platforms behind player to save memory
       for (let i = platforms.length - 1; i >= 0; i--) {
         const platform = platforms[i];
-        if (platform.userData.xPosition < player.position.x - removalDistance) {
+        if (platform.userData.xPosition > player.position.x + removalDistance) {
           scene.remove(platform);
           // Don't dispose geometry/material - they're shared across all platforms
           platforms.splice(i, 1);
@@ -255,8 +269,8 @@ export default function ParkourGame() {
 
       // Update score based on distance traveled (using platformSpacing for accurate counting)
       // Add offset so score updates at the start of each block, not halfway through
-      const scoreOffset = platformSpacing / 2; // Half a platform spacing
-      const distanceScore = Math.floor(Math.max(0, player.position.x - startX + scoreOffset) / platformSpacing);
+      const scoreOffset = Math.abs(platformSpacing) / 2; // Half a platform spacing
+      const distanceScore = Math.floor(Math.max(0, startX - player.position.x + scoreOffset) / Math.abs(platformSpacing));
       if (distanceScore > score) {
         setScore(distanceScore);
       }
