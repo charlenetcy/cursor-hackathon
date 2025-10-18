@@ -23,44 +23,11 @@ export default function BackgroundPromptInput({
   return (
     <div style={{
       position: 'absolute',
-      bottom: 20,
+      top: 20,
       right: 20,
       zIndex: 100,
       transition: 'all 0.3s ease',
     }}>
-      {!isExpanded ? (
-        // Collapsed button
-        <button
-          onClick={() => setIsExpanded(true)}
-          disabled={isDisabled || isGenerating}
-          style={{
-            backgroundColor: 'rgba(138, 43, 226, 0.9)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '50%',
-            width: '60px',
-            height: '60px',
-            fontSize: '24px',
-            cursor: isDisabled || isGenerating ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            transition: 'all 0.2s',
-            opacity: isDisabled || isGenerating ? 0.5 : 1,
-          }}
-          onMouseEnter={(e) => {
-            if (!isDisabled && !isGenerating) {
-              e.target.style.transform = 'scale(1.1)';
-              e.target.style.backgroundColor = 'rgba(147, 51, 234, 1)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.transform = 'scale(1)';
-            e.target.style.backgroundColor = 'rgba(138, 43, 226, 0.9)';
-          }}
-          title="Generate custom background"
-        >
-          🎨
-        </button>
-      ) : (
         // Expanded form
         <div style={{
           backgroundColor: 'rgba(0, 0, 0, 0.85)',
@@ -231,8 +198,6 @@ export default function BackgroundPromptInput({
             </p>
           </form>
         </div>
-      )}
-
       {/* Add keyframe animation for spinner */}
       <style>
         {`
