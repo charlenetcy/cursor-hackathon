@@ -4,6 +4,7 @@ export interface GeneratedImage {
   id: string;
   prompt: string;
   image_url: string;
+  texture_url?: string; // Add texture URL
   status: 'pending' | 'processing' | 'completed' | 'failed';
   created_at: string;
   completed_at?: string;
@@ -22,33 +23,51 @@ export interface GenerateBackgroundResponse {
 }
 
 /**
- * Requests the backend to generate a new background image
+ * Requests the backend to generate a new background image using Dev C's Prompt Service
+ * This calls the unified server's prompt parsing and image generation endpoints
+ * 
  * @param prompt - Text description for the background image
- * @param userId - Optional user identifier
+ * @param userId - Optional user identifier (not used currently)
  * @returns Promise with generation request ID and status
  */
 export async function requestBackgroundGeneration(
   prompt: string,
   userId?: string
 ): Promise<GenerateBackgroundResponse> {
-  // TODO: Replace with actual backend API call
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
   
   try {
-    const response = await fetch(`${BACKEND_URL}/api/generate-background`, {
+    console.log('🎨 Step 1: Parsing prompt with Groq...');
+    
+    // Step 1: Parse the prompt to get promptId
+    const parseResponse = await fetch(`${BACKEND_URL}/prompt/parse`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ prompt, userId }),
+      body: JSON.stringify({ text: prompt }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to request generation: ${response.statusText}`);
+    if (!parseResponse.ok) {
+      throw new Error(`Parse failed: ${parseResponse.statusText}`);
     }
 
-    const data = await response.json();
-    return data;
+    const parseData = await parseResponse.json();
+    console.log('✅ Prompt parsed:', parseData.promptId);
+    
+    console.log('🎨 Step 2: Generating images (this may take ~15-20 seconds)...');
+    
+    // Step 2: Trigger generation (this is async on the backend)
+    // For now, we return the promptId and the frontend will poll
+    // In the future, this could trigger a background job
+    
+    // Return immediately with pending status
+    // The frontend will poll for completion
+    return {
+      id: parseData.promptId,
+      status: 'processing',
+      message: 'Generation started',
+    };
   } catch (error) {
     console.error('Error requesting background generation:', error);
     throw error;
@@ -56,29 +75,38 @@ export async function requestBackgroundGeneration(
 }
 
 /**
- * Polls Supabase to check if a generated image is ready
- * @param generationId - The ID of the generation request
+ * Checks if images are generated for a promptId by calling the style endpoint
+ * @param generationId - The promptId from the parse step
  * @returns Promise with the generated image data or null if not ready
  */
 export async function checkGenerationStatus(
   generationId: string
 ): Promise<GeneratedImage | null> {
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+  
   try {
-    if (!isSupabaseConfigured || !supabase) {
-      return null;
-    }
-    const { data, error } = await supabase
-      .from('generated_backgrounds')
-      .select('*')
-      .eq('id', generationId)
-      .single();
+    // Call the /style/byPromptId endpoint which generates and returns URLs
+    const response = await fetch(`${BACKEND_URL}/style/byPromptId/${generationId}`);
 
-    if (error) {
-      console.error('Error checking generation status:', error);
+    if (!response.ok) {
+      // If 404 or error, generation not ready yet
       return null;
     }
 
-    return data as GeneratedImage;
+    const styleData = await response.json();
+    
+    // Convert to GeneratedImage format expected by frontend
+    // Extract both skybox and texture URLs
+    const textureUrl = styleData.textureIds?.[0]; // Get first texture URL from array
+    
+    return {
+      id: styleData.promptId,
+      prompt: '', // We don't have the original prompt here
+      image_url: styleData.skyboxUrl, // Skybox for background
+      texture_url: textureUrl, // Texture for blocks
+      status: 'completed',
+      created_at: new Date().toISOString(),
+    };
   } catch (error) {
     console.error('Error in checkGenerationStatus:', error);
     return null;
@@ -98,27 +126,30 @@ export async function pollForCompletion(
   initialDelay: number = 2000
 ): Promise<GeneratedImage | null> {
   let attempts = 0;
-  let delay = initialDelay;
+
+  console.log(`🔄 Starting polling for ${generationId}, max attempts: ${maxAttempts}`);
 
   while (attempts < maxAttempts) {
+    console.log(`🔄 Polling attempt ${attempts+1}/${maxAttempts} for ${generationId}`);
     const result = await checkGenerationStatus(generationId);
-
+    
     if (result?.status === 'completed' && result.image_url) {
+      console.log(`✅ Generation completed for ${generationId}`, result);
       return result;
     }
 
     if (result?.status === 'failed') {
-      console.error('Generation failed:', result.error_message);
+      console.error('❌ Generation failed:', result.error_message);
       return null;
     }
 
-    // Wait before next poll (exponential backoff with max 10s)
-    await new Promise(resolve => setTimeout(resolve, Math.min(delay, 10000)));
-    delay *= 1.5; // Increase delay for next attempt
+    // Wait before next poll (use initialDelay consistently)
+    console.log(`⏳ Waiting ${initialDelay}ms before next poll`);  
+    await new Promise(resolve => setTimeout(resolve, initialDelay));
     attempts++;
   }
 
-  console.error('Polling timeout: Generation did not complete in time');
+  console.error('❌ Polling timeout: Generation did not complete in time');
   return null;
 }
 

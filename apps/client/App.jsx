@@ -17,18 +17,53 @@ export default function ParkourGame() {
   
   // Store references to Three.js objects for dynamic background updates
   const skyMaterialRef = useRef(null);
+  const regularMaterialRef = useRef(null);
+  const specialMaterialRef = useRef(null);
   const textureLoaderRef = useRef(null);
+  const sceneRef = useRef(null);
   const localPlayerIdRef = useRef(null);
 
-  // Handle background generation
-  const handleBackgroundReady = (imageUrl) => {
-    console.log('New background image ready:', imageUrl);
+  // Handle background generation - receives both skybox and texture URLs
+  const handleBackgroundReady = (skyboxUrl, textureUrl) => {
+    console.log('🎨 New images ready!');
+    console.log('  - Skybox:', skyboxUrl);
+    console.log('  - Texture:', textureUrl);
     
-    // Dynamically load and apply the new texture
-    if (textureLoaderRef.current && skyMaterialRef.current) {
-      const newTexture = textureLoaderRef.current.load(imageUrl);
-      skyMaterialRef.current.map = newTexture;
+    // Apply skybox to the sky sphere
+    if (textureLoaderRef.current && skyMaterialRef.current && skyboxUrl) {
+      const newSkyTexture = textureLoaderRef.current.load(skyboxUrl, () => {
+        console.log('✅ Skybox texture loaded successfully');
+      });
+      skyMaterialRef.current.map = newSkyTexture;
       skyMaterialRef.current.needsUpdate = true;
+    }
+
+    // Apply texture to block materials (both regular and special)
+    // Since materials are shared, this updates ALL current and future blocks automatically!
+    if (textureLoaderRef.current && textureUrl) {
+      const newBlockTexture = textureLoaderRef.current.load(textureUrl, (loadedTexture) => {
+        console.log('✅ Block texture loaded successfully');
+        
+        // Configure texture settings for proper tiling
+        loadedTexture.wrapS = THREE.RepeatWrapping;
+        loadedTexture.wrapT = THREE.RepeatWrapping;
+        loadedTexture.colorSpace = THREE.SRGBColorSpace;
+        loadedTexture.magFilter = THREE.NearestFilter; // Pixelated look
+        
+        // Update regular material
+        if (regularMaterialRef.current) {
+          regularMaterialRef.current.map = loadedTexture;
+          regularMaterialRef.current.needsUpdate = true;
+          console.log('✅ Regular block material updated');
+        }
+        
+        // Update special material (keep emissive glow)
+        if (specialMaterialRef.current) {
+          specialMaterialRef.current.map = loadedTexture;
+          specialMaterialRef.current.needsUpdate = true;
+          console.log('✅ Special block material updated');
+        }
+      });
     }
   };
 
@@ -129,6 +164,10 @@ export default function ParkourGame() {
       side: THREE.DoubleSide,
       emissive: 0x664400 // Special platforms glow
     });
+    
+    // Store material refs for dynamic texture updates
+    regularMaterialRef.current = regularMaterial;
+    specialMaterialRef.current = specialMaterial;
     
     // Track state
     let startX = 0; // Track starting position for score calculation

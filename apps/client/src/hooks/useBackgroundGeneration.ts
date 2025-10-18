@@ -1,8 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
   requestBackgroundGeneration,
   pollForCompletion,
-  subscribeToGenerationUpdates,
   GeneratedImage,
 } from '../services/backgroundGenerationService';
 
@@ -19,30 +18,22 @@ interface UseBackgroundGenerationReturn {
 
 /**
  * Custom hook for managing background image generation
- * @param onImageReady - Callback function called when new image is ready
+ * @param onImageReady - Callback function called when new images are ready (skybox and texture)
  * @returns Generation state and control functions
  */
 export function useBackgroundGeneration(
-  onImageReady?: (imageUrl: string) => void
+  onImageReady?: (imageUrl: string, textureUrl?: string) => void
 ): UseBackgroundGenerationReturn {
   const [status, setStatus] = useState<GenerationStatus>('idle');
   const [currentImage, setCurrentImage] = useState<GeneratedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string>('');
-  
-  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const reset = useCallback(() => {
     setStatus('idle');
     setCurrentImage(null);
     setError(null);
     setProgress('');
-    
-    // Clean up any active subscriptions
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current();
-      unsubscribeRef.current = null;
-    }
   }, []);
 
   const generateBackground = useCallback(async (prompt: string) => {
@@ -56,68 +47,34 @@ export function useBackgroundGeneration(
       setError(null);
       setProgress('Sending request to server...');
 
-      // Request generation from backend
+      // Request generation from backend (parses and returns promptId)
       const response = await requestBackgroundGeneration(prompt);
       
       setStatus('processing');
-      setProgress('Generating your background image...');
+      setProgress('Generating your background image (~15-20 seconds)...');
 
-      // Option 1: Use real-time subscription (preferred for instant updates)
-      const unsubscribe = subscribeToGenerationUpdates(response.id, (updatedImage) => {
-        console.log('Real-time update:', updatedImage);
-        
-        if (updatedImage.status === 'completed' && updatedImage.image_url) {
-          setCurrentImage(updatedImage);
-          setStatus('completed');
-          setProgress('Background ready!');
-          
-          // Notify parent component
-          if (onImageReady) {
-            onImageReady(updatedImage.image_url);
-          }
-          
-          // Clean up subscription
-          unsubscribe();
-        } else if (updatedImage.status === 'failed') {
-          setError(updatedImage.error_message || 'Generation failed');
-          setStatus('failed');
-          setProgress('');
-          unsubscribe();
-        }
-      });
+      console.log('🔄 Starting image generation for promptId:', response.id);
+
+      // Poll for completion (no Supabase realtime needed)
+      const result = await pollForCompletion(response.id, 20, 3000);
       
-      unsubscribeRef.current = unsubscribe;
-
-      // Option 2: Fallback to polling if real-time doesn't work
-      // (Can be removed if real-time works reliably)
-      setTimeout(async () => {
-        // Only poll if still processing after 5 seconds
-        if (status === 'processing') {
-          setProgress('Still generating... (this may take a minute)');
-          
-          const result = await pollForCompletion(response.id);
-          
-          if (result?.status === 'completed' && result.image_url) {
-            setCurrentImage(result);
-            setStatus('completed');
-            setProgress('Background ready!');
-            
-            if (onImageReady) {
-              onImageReady(result.image_url);
-            }
-          } else if (!result) {
-            setError('Generation timeout or failed');
-            setStatus('failed');
-            setProgress('');
-          }
-          
-          // Clean up subscription after polling completes
-          if (unsubscribeRef.current) {
-            unsubscribeRef.current();
-            unsubscribeRef.current = null;
-          }
+      if (result?.status === 'completed' && result.image_url) {
+        console.log('✅ Generation complete!');
+        console.log('🖼️ Skybox URL:', result.image_url);
+        console.log('🎨 Texture URL:', result.texture_url);
+        setCurrentImage(result);
+        setStatus('completed');
+        setProgress('Background ready!');
+        
+        if (onImageReady) {
+          onImageReady(result.image_url, result.texture_url);
         }
-      }, 5000);
+      } else {
+        console.log('❌ Generation failed or timeout');
+        setError('Generation timeout or failed');
+        setStatus('failed');
+        setProgress('');
+      }
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate background';

@@ -5,6 +5,10 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { Server } from 'socket.io';
 
+// Import prompt service routes
+import promptRoutes from './routes/prompt';
+import styleRoutes from './routes/style';
+
 // Types
 interface Vector3 { x: number; y: number; z: number; }
 interface PlayerInput { forward: boolean; backward: boolean; left: boolean; right: boolean; jump: boolean; sprint: boolean; yaw?: number; }
@@ -25,6 +29,22 @@ const GENERATION_DISTANCE = 50;
 const app = express();
 app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
+
+// Add prompt service routes
+app.use('/prompt', promptRoutes);
+app.use('/style', styleRoutes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    services: {
+      game: 'running',
+      promptService: 'integrated'
+    }
+  });
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
@@ -167,5 +187,20 @@ setInterval(() => {
 initializeWorld();
 
 server.listen(PORT, () => {
-  console.log(`[server] Socket.io listening on http://localhost:${PORT}`);
+  console.log(`╔══════════════════════════════════════════════════════════════╗`);
+  console.log(`║  🚀 Unified Game Server + Prompt Service                     ║`);
+  console.log(`╚══════════════════════════════════════════════════════════════╝`);
+  console.log(`📡 Server running on http://localhost:${PORT}`);
+  console.log(`🎮 Socket.IO: Game server active`);
+  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  console.log(``);
+  console.log(`📋 Prompt Service Endpoints:`);
+  console.log(`   POST   /prompt/parse          - Parse text prompts with Groq AI`);
+  console.log(`   GET    /style/byPromptId/:id  - Generate & retrieve style assets`);
+  console.log(``);
+  console.log(`🔌 Integrations:`);
+  console.log(`   ✅ Groq AI (LLM parsing)`);
+  console.log(`   ✅ Fal.ai (Image generation)`);
+  console.log(`   ✅ Supabase (Asset storage)`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 });
