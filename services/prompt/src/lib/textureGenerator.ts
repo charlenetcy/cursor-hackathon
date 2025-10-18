@@ -42,7 +42,6 @@ export function createSolidColorTexture(
   ]));
 
   // Create pixel data (RGB format, no alpha)
-  const pixelDataSize = width * height * 3; // 3 bytes per pixel (RGB)
   const scanlineSize = width * 3 + 1; // +1 for filter byte
   const rawData = Buffer.alloc(height * scanlineSize);
   

@@ -13,8 +13,5 @@
     "moduleResolution": "node"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../../shared" }
-  ]
+  "exclude": ["node_modules", "dist", "src/generator/**/*"]
 }

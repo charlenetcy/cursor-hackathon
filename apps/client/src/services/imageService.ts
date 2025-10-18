@@ -19,7 +19,12 @@ export async function fetchImagesFromStorage(
   folderPath: string = ''
 ): Promise<string[]> {
   try {
-    const { data, error } = await supabase.storage
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImagesFromStorage returning empty list');
+      return [];
+    }
+    const sb = supabase!;
+    const { data, error } = await sb.storage
       .from(bucketName)
       .list(folderPath);
 
@@ -43,7 +48,7 @@ export async function fetchImagesFromStorage(
       })
       .map(file => {
         const filePath = folderPath ? `${folderPath}/${file.name}` : file.name;
-        const { data: urlData } = supabase.storage
+        const { data: urlData } = sb.storage
           .from(bucketName)
           .getPublicUrl(filePath);
         return urlData.publicUrl;
@@ -66,7 +71,12 @@ export async function fetchImagesFromDatabase(
   tableName: string = 'background_images'
 ): Promise<BackgroundImage[]> {
   try {
-    const { data, error } = await supabase
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImagesFromDatabase returning empty list');
+      return [];
+    }
+    const sb = supabase!;
+    const { data, error } = await sb
       .from(tableName)
       .select('*')
       .order('level', { ascending: true });
@@ -94,7 +104,12 @@ export async function fetchImageForLevel(
   tableName: string = 'background_images'
 ): Promise<BackgroundImage | null> {
   try {
-    const { data, error } = await supabase
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImageForLevel returning null');
+      return null;
+    }
+    const sb = supabase!;
+    const { data, error } = await sb
       .from(tableName)
       .select('*')
       .eq('level', level)
@@ -119,7 +134,12 @@ export async function fetchImageForLevel(
  * @returns Public URL string
  */
 export function getPublicUrl(bucketName: string, filePath: string): string {
-  const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+  if (!supabase) {
+    console.warn('Supabase not configured; getPublicUrl returning empty string');
+    return '';
+  }
+  const sb = supabase!;
+  const { data } = sb.storage.from(bucketName).getPublicUrl(filePath);
   return data.publicUrl;
 }
 

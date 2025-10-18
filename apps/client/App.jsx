@@ -73,8 +73,9 @@ export default function ParkourGame() {
     if (!mountRef.current) return;
 
     // Scene setup
+  const serverUrl = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
     const scene = new THREE.Scene();
-    const socket = io('http://localhost:3001', {
+    const socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
     });
     
@@ -171,7 +172,9 @@ export default function ParkourGame() {
     
     // Track state
     let startX = 0; // Track starting position for score calculation
+    let maxDistanceReached = 0; // Track the maximum distance reached to prevent score from decreasing
     const removalDistance = 35; // Remove platforms this far behind player
+    const PLATFORM_SPACING = 7; // Distance between platforms (matches server spacing)
     
     // Local helper no longer used (server streams platforms)
 
@@ -206,6 +209,14 @@ export default function ParkourGame() {
     // Controls
     const keys = {};
     window.addEventListener('keydown', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
       keys[e.key.toLowerCase()] = true;
       if ((e.key === ' ') && !isJumping) {
         velocity.y = jumpStrength;
@@ -213,6 +224,14 @@ export default function ParkourGame() {
       }
     });
     window.addEventListener('keyup', (e) => {
+      // Ignore input if user is typing in a text field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA'
+      );
+      
+      if (isTyping) return;
       keys[e.key.toLowerCase()] = false;
     });
 
@@ -233,12 +252,19 @@ export default function ParkourGame() {
         platformBox.min.z -= landingBuffer;
         platformBox.max.z += landingBuffer;
         
-        if (playerBox.intersectsBox(platformBox)) {
+        // Check if player is horizontally over the platform
+        const playerCenterX = player.position.x;
+        const playerCenterZ = player.position.z;
+        
+        if (playerCenterX >= platformBox.min.x && playerCenterX <= platformBox.max.x &&
+            playerCenterZ >= platformBox.min.z && playerCenterZ <= platformBox.max.z) {
+          
           const playerBottom = playerBox.min.y;
           const platformTop = platformBox.max.y;
           
-          // Increased tolerance for bigger blocks
-          if (velocity.y <= 0 && Math.abs(playerBottom - platformTop) < 0.4) {
+          // More generous tolerance to catch fast-falling players
+          // If player is falling and within range of platform top (above or slightly below)
+          if (velocity.y <= 0 && playerBottom <= platformTop + 0.3 && playerBottom >= platformTop - 1.0) {
             player.position.y = platformTop + 0.6; // Player half-height (1.2/2 = 0.6)
             velocity.y = 0;
             isJumping = false;
@@ -249,6 +275,43 @@ export default function ParkourGame() {
       return false;
     };
 
+    // Helper function to find the first (rightmost/highest X) platform
+    const findFirstPlatform = () => {
+      let firstPlatform = null;
+      let maxX = -Infinity;
+      
+      for (const platform of platforms.values()) {
+        const x = platform.userData.xPosition;
+        if (x > maxX) {
+          maxX = x;
+          firstPlatform = platform;
+        }
+      }
+      
+      return firstPlatform;
+    };
+
+    // Helper function to spawn player above first available platform
+    const spawnPlayerAtFirstPlatform = () => {
+      const firstPlatform = findFirstPlatform();
+      if (firstPlatform) {
+        player.position.set(
+          firstPlatform.position.x,
+          firstPlatform.position.y + 1.35, // Platform top + player offset
+          firstPlatform.position.z
+        );
+        startX = firstPlatform.position.x; // Update startX for score calculation
+        maxDistanceReached = 0; // Reset max distance for new run
+      } else {
+        // Fallback to origin if no platforms exist yet
+        player.position.set(0, 1.35, 0);
+        startX = 0;
+        maxDistanceReached = 0;
+      }
+      velocity.set(0, 0, 0);
+      isJumping = false;
+    };
+
     // Socket events
     socket.on('world_init', (data) => {
       if (data && data.playerId) {
@@ -256,6 +319,8 @@ export default function ParkourGame() {
       }
       if (Array.isArray(data.platforms)) {
         upsertPlatforms(data.platforms);
+        // Spawn at first platform after platforms are loaded
+        spawnPlayerAtFirstPlatform();
       }
       // Seed existing other players
       if (Array.isArray(data.players)) {
@@ -361,10 +426,21 @@ export default function ParkourGame() {
         }
       }
 
-      // Update score based on horizontal distance traveled from start (blocks are server-driven)
-      const distanceScore = Math.floor(Math.max(0, startX - player.position.x));
-      // Only update score when player is grounded (not jumping)
-      if (distanceScore > score && !isJumping) {
+      // Update score based on number of blocks passed (platforms are spaced PLATFORM_SPACING apart)
+      // Calculate distance traveled from start
+      const distanceTraveled = startX - player.position.x;
+      
+      // Update max distance to ensure score never decreases during a run
+      if (distanceTraveled > maxDistanceReached) {
+        maxDistanceReached = distanceTraveled;
+      }
+      
+      // Calculate score based on max distance reached, adding 0.5 offset so score increments 
+      // when player reaches the center of each platform (more intuitive)
+      const distanceScore = Math.floor(Math.max(0, (maxDistanceReached + (PLATFORM_SPACING * 0.2)) / PLATFORM_SPACING));
+      
+      // Update score (continuously, even when jumping)
+      if (distanceScore > score) {
         setScore(distanceScore);
       }
 
@@ -381,11 +457,8 @@ export default function ParkourGame() {
           localStorage.setItem('parkourHighScore', newHighScore.toString());
         }
         
-        // Reset player to starting position
-        player.position.set(0, 1.35, 0);
-        startX = 0;
-        velocity.set(0, 0, 0);
-        isJumping = false;
+        // Respawn at first available platform (not at origin, since blocks may have despawned)
+        spawnPlayerAtFirstPlatform();
         
         // Note: Background is NOT reset on game restart - user's custom background persists
         
@@ -469,22 +542,6 @@ export default function ParkourGame() {
         <div style={{ marginTop: '10px', fontSize: '12px', opacity: 0.7 }}>
           Platforms generate infinitely!
         </div>
-        {gameOver && (
-          <div style={{ 
-            marginTop: '10px', 
-            padding: '10px',
-            backgroundColor: 'rgba(255, 107, 107, 0.3)',
-            borderRadius: '5px',
-            border: '2px solid #ff6b6b'
-          }}>
-            <div style={{ color: '#ff6b6b', fontWeight: 'bold', fontSize: '18px' }}>
-              You fell!
-            </div>
-            <div style={{ color: '#fff', marginTop: '5px' }}>
-              Restarting in 2s...
-            </div>
-          </div>
-        )}
       </div>
       <div style={{
         position: 'absolute',

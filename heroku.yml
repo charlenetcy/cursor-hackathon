@@ -1,0 +1,10 @@
+build:
+  docker:
+    web: apps/server/Dockerfile
+  config:
+    NODE_ENV: production
+
+run:
+  web: node dist/index.js
+
+
