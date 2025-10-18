@@ -19,6 +19,10 @@ export async function fetchImagesFromStorage(
   folderPath: string = ''
 ): Promise<string[]> {
   try {
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImagesFromStorage returning empty list');
+      return [];
+    }
     const { data, error } = await supabase.storage
       .from(bucketName)
       .list(folderPath);
@@ -66,6 +70,10 @@ export async function fetchImagesFromDatabase(
   tableName: string = 'background_images'
 ): Promise<BackgroundImage[]> {
   try {
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImagesFromDatabase returning empty list');
+      return [];
+    }
     const { data, error } = await supabase
       .from(tableName)
       .select('*')
@@ -94,6 +102,10 @@ export async function fetchImageForLevel(
   tableName: string = 'background_images'
 ): Promise<BackgroundImage | null> {
   try {
+    if (!supabase) {
+      console.warn('Supabase not configured; fetchImageForLevel returning null');
+      return null;
+    }
     const { data, error } = await supabase
       .from(tableName)
       .select('*')
@@ -119,6 +131,10 @@ export async function fetchImageForLevel(
  * @returns Public URL string
  */
 export function getPublicUrl(bucketName: string, filePath: string): string {
+  if (!supabase) {
+    console.warn('Supabase not configured; getPublicUrl returning empty string');
+    return '';
+  }
   const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
   return data.publicUrl;
 }

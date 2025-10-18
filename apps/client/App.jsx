@@ -38,8 +38,9 @@ export default function ParkourGame() {
     if (!mountRef.current) return;
 
     // Scene setup
+  const serverUrl = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
     const scene = new THREE.Scene();
-    const socket = io('http://localhost:3001', {
+    const socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
     });
     
