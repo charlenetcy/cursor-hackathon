@@ -162,7 +162,16 @@ io.on('connection', (socket) => {
     playerIdToInput.delete(socket.id);
   });
 
-  // Prompt handler unused in platform mode
+  // Background change handler - broadcast to all clients
+  socket.on('background_change', (data) => {
+    console.log(`[Server] Received background_change from ${socket.id}:`, data);
+    // Broadcast to all clients (including sender for confirmation)
+    io.emit('background_update', {
+      skyboxUrl: data.skyboxUrl,
+      textureUrl: data.textureUrl
+    });
+    console.log(`[Server] Broadcasted background_update to all clients`);
+  });
 });
 
 // No REST endpoints needed for platform mode

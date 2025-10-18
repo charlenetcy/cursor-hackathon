@@ -4,6 +4,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { io } from 'socket.io-client';
 import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
 import BackgroundPromptInput from './src/components/BackgroundPromptInput';
+import treesUrl from './assets/trees.jpg';
+import grassUrl from './assets/grass_dirt.png';
 
 export default function ParkourGame() {
   const mountRef = useRef(null);
@@ -17,17 +19,27 @@ export default function ParkourGame() {
   
   // Store references to Three.js objects for dynamic background updates
   const skyMaterialRef = useRef(null);
+  const skyRef = useRef(null);
   const regularMaterialRef = useRef(null);
   const specialMaterialRef = useRef(null);
   const textureLoaderRef = useRef(null);
   const sceneRef = useRef(null);
   const localPlayerIdRef = useRef(null);
+  const socketRef = useRef(null);
 
   // Handle background generation - receives both skybox and texture URLs
   const handleBackgroundReady = (skyboxUrl, textureUrl) => {
     console.log('🎨 New images ready!');
     console.log('  - Skybox:', skyboxUrl);
     console.log('  - Texture:', textureUrl);
+    
+    // Broadcast to all players via server
+    if (socketRef.current) {
+      console.log('📡 Emitting background_change to server:', { skyboxUrl, textureUrl });
+      socketRef.current.emit('background_change', { skyboxUrl, textureUrl });
+    } else {
+      console.error('❌ Socket not available - cannot broadcast background change');
+    }
     
     // Apply skybox to the sky sphere
     if (textureLoaderRef.current && skyMaterialRef.current && skyboxUrl) {
@@ -73,10 +85,28 @@ export default function ParkourGame() {
     if (!mountRef.current) return;
 
     // Scene setup
-  const serverUrl = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
+    const isDev = import.meta.env.DEV;
+  const serverUrl = (import.meta.env.VITE_SERVER_URL ?? import.meta.env.VITE_BACKEND_URL ?? (isDev ? 'http://localhost:3001' : ''));
+    if (!serverUrl) {
+      console.error('[client] Missing server URL (set VITE_SERVER_URL)');
+      return;
+    }
     const scene = new THREE.Scene();
     const socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+      transports: isDev ? ['websocket', 'polling'] : ['polling', 'websocket'],
+      withCredentials: false,
+    });
+    socketRef.current = socket; // Store ref for background updates
+    
+    // Socket connection debugging
+    socket.on('connect', () => {
+      console.log('✅ Socket connected to server:', socket.id);
+    });
+    socket.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason);
+    });
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error);
     });
     
     // Create a large sphere for the background (skybox effect)
@@ -84,7 +114,7 @@ export default function ParkourGame() {
     textureLoaderRef.current = textureLoader; // Store ref for dynamic updates
     
     // Load default initial background
-    const initialImageUrl = './assets/trees.jpg';
+    const initialImageUrl = treesUrl;
     const textureBackground = textureLoader.load(initialImageUrl);
     
     const skyGeometry = new THREE.SphereGeometry(500, 60, 40);
@@ -97,6 +127,7 @@ export default function ParkourGame() {
     skyMaterialRef.current = skyMaterial; // Store ref for dynamic updates
     
     const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+    skyRef.current = sky;
     scene.add(sky);
     
     scene.fog = new THREE.Fog(0x87ceeb, 50, 150); // Start fog at distance 50 instead of 0
@@ -107,6 +138,7 @@ export default function ParkourGame() {
     
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x87ceeb, 1);
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
 
@@ -146,7 +178,7 @@ export default function ParkourGame() {
     const moveSpeed = 0.18; // Slightly faster for bigger platforms
 
     // Platforms - server-authoritative
-    const texture = new THREE.TextureLoader().load( './assets/grass_dirt.png' );
+    const texture = new THREE.TextureLoader().load( grassUrl );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
 
@@ -346,6 +378,51 @@ export default function ParkourGame() {
       }
     });
 
+    socket.on('background_update', (data) => {
+      const { skyboxUrl, textureUrl } = data;
+      console.log('🌍 Received background update from server:', { skyboxUrl, textureUrl });
+      
+      // Apply textures from another player's prompt
+      if (textureLoaderRef.current && skyMaterialRef.current && skyboxUrl) {
+        const newSkyTexture = textureLoaderRef.current.load(
+          skyboxUrl,
+          () => {
+            console.log('✅ Skybox updated from server broadcast');
+          },
+          undefined,
+          (error) => {
+            console.error('❌ Failed to load skybox from server:', error);
+          }
+        );
+        skyMaterialRef.current.map = newSkyTexture;
+        skyMaterialRef.current.needsUpdate = true;
+      }
+      if (textureLoaderRef.current && textureUrl) {
+        const newBlockTexture = textureLoaderRef.current.load(
+          textureUrl, 
+          (loaded) => {
+            loaded.wrapS = THREE.RepeatWrapping;
+            loaded.wrapT = THREE.RepeatWrapping;
+            loaded.colorSpace = THREE.SRGBColorSpace;
+            loaded.magFilter = THREE.NearestFilter;
+            if (regularMaterialRef.current) {
+              regularMaterialRef.current.map = loaded;
+              regularMaterialRef.current.needsUpdate = true;
+              console.log('✅ Block texture updated from server broadcast');
+            }
+            if (specialMaterialRef.current) {
+              specialMaterialRef.current.map = loaded;
+              specialMaterialRef.current.needsUpdate = true;
+            }
+          },
+          undefined,
+          (error) => {
+            console.error('❌ Failed to load block texture from server:', error);
+          }
+        );
+      }
+    });
+
     // 🎤 Random voice timer - plays a random phrase every 15 seconds
     const voiceInterval = setInterval(() => {
       console.log('🎤 Playing random voice line...');
@@ -486,6 +563,9 @@ export default function ParkourGame() {
       camera.position.y = player.position.y + 0.4; // Adjusted for taller player
       camera.position.z = player.position.z;
 
+      if (skyRef.current) {
+        skyRef.current.position.copy(camera.position);
+      }
       renderer.render(scene, camera);
     };
 
