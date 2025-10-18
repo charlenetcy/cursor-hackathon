@@ -8,12 +8,12 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 # Copy monorepo manifests to leverage Docker cache
-COPY package.json package-lock.json ./
+COPY package*.json ./
 COPY shared/package.json ./shared/package.json
 COPY apps/server/package.json ./apps/server/package.json
 
 # Install root deps (for workspace hoisting) and server deps
-RUN npm ci
+RUN npm install
 
 # Copy source
 COPY shared ./shared
