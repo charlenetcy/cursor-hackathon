@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
+import BackgroundPromptInput from './src/components/BackgroundPromptInput';
 
 export default function ParkourGame() {
   const mountRef = useRef(null);
@@ -11,6 +13,24 @@ export default function ParkourGame() {
     return saved ? parseInt(saved, 10) : 0;
   });
   const [gameOver, setGameOver] = useState(false);
+  
+  // Store references to Three.js objects for dynamic background updates
+  const skyMaterialRef = useRef(null);
+  const textureLoaderRef = useRef(null);
+
+  // Handle background generation
+  const handleBackgroundReady = (imageUrl) => {
+    console.log('New background image ready:', imageUrl);
+    
+    // Dynamically load and apply the new texture
+    if (textureLoaderRef.current && skyMaterialRef.current) {
+      const newTexture = textureLoaderRef.current.load(imageUrl);
+      skyMaterialRef.current.map = newTexture;
+      skyMaterialRef.current.needsUpdate = true;
+    }
+  };
+
+  const { status, error: genError, progress, generateBackground, reset: resetGeneration } = useBackgroundGeneration(handleBackgroundReady);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -19,7 +39,13 @@ export default function ParkourGame() {
     const scene = new THREE.Scene();
     
     // Create a large sphere for the background (skybox effect)
-    const textureBackground = new THREE.TextureLoader().load( './assets/forest.jpg' );
+    const textureLoader = new THREE.TextureLoader();
+    textureLoaderRef.current = textureLoader; // Store ref for dynamic updates
+    
+    // Load default initial background
+    const initialImageUrl = './assets/trees.jpg';
+    const textureBackground = textureLoader.load(initialImageUrl);
+    
     const skyGeometry = new THREE.SphereGeometry(500, 60, 40);
     // Flip the sphere inside-out so we see the texture from inside
     skyGeometry.scale(-1, 1, 1);
@@ -27,6 +53,8 @@ export default function ParkourGame() {
       map: textureBackground,
       fog: false // Don't let fog affect the skybox
     });
+    skyMaterialRef.current = skyMaterial; // Store ref for dynamic updates
+    
     const sky = new THREE.Mesh(skyGeometry, skyMaterial);
     scene.add(sky);
     
@@ -304,6 +332,8 @@ export default function ParkourGame() {
         velocity.set(0, 0, 0);
         isJumping = false;
         
+        // Note: Background is NOT reset on game restart - user's custom background persists
+        
         // Regenerate initial chunks from scratch
         generateChunk(0, true);
         const secondChunkStart = lastGeneratedX;
@@ -349,6 +379,15 @@ export default function ParkourGame() {
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
       <div ref={mountRef} />
+      
+      {/* Background Generation UI */}
+      <BackgroundPromptInput
+        onSubmit={generateBackground}
+        status={status}
+        progress={progress}
+        error={genError}
+      />
+      
       <div style={{
         position: 'absolute',
         top: 20,
