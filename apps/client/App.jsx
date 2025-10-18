@@ -70,6 +70,18 @@ export default function ParkourGame() {
     const platforms = [];
     const platformGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
     
+    // Shared materials for all platforms (more memory efficient)
+    const regularMaterial = new THREE.MeshLambertMaterial({ 
+      map: texture, 
+      side: THREE.DoubleSide,
+      emissive: 0x000000
+    });
+    const specialMaterial = new THREE.MeshLambertMaterial({ 
+      map: texture, 
+      side: THREE.DoubleSide,
+      emissive: 0x664400 // Special platforms glow
+    });
+    
     // Track generation progress (adjusted for 1.5 sized blocks)
     let lastGeneratedX = 0;
     let startX = 0; // Track starting position for score calculation
@@ -80,11 +92,7 @@ export default function ParkourGame() {
     
     // Create a single platform
     const createPlatform = (x, y, z, isSpecial = false) => {
-      const material = new THREE.MeshLambertMaterial({ 
-        map: texture, 
-        side: THREE.DoubleSide,
-        emissive: isSpecial ? 0x664400 : 0x000000 // Special platforms glow
-      });
+      const material = isSpecial ? specialMaterial : regularMaterial;
       const platform = new THREE.Mesh(platformGeometry, material);
       platform.receiveShadow = true;
       platform.castShadow = true;
@@ -240,14 +248,15 @@ export default function ParkourGame() {
         const platform = platforms[i];
         if (platform.userData.xPosition < player.position.x - removalDistance) {
           scene.remove(platform);
-          platform.geometry.dispose();
-          platform.material.dispose();
+          // Don't dispose geometry/material - they're shared across all platforms
           platforms.splice(i, 1);
         }
       }
 
       // Update score based on distance traveled (using platformSpacing for accurate counting)
-      const distanceScore = Math.floor(Math.max(0, player.position.x - startX) / platformSpacing);
+      // Add offset so score updates at the start of each block, not halfway through
+      const scoreOffset = platformSpacing / 2; // Half a platform spacing
+      const distanceScore = Math.floor(Math.max(0, player.position.x - startX + scoreOffset) / platformSpacing);
       if (distanceScore > score) {
         setScore(distanceScore);
       }
@@ -265,29 +274,27 @@ export default function ParkourGame() {
           localStorage.setItem('parkourHighScore', newHighScore.toString());
         }
         
-        // Find the first (leftmost) remaining platform and respawn
-        if (platforms.length > 0) {
-          const firstPlatform = platforms.reduce((leftmost, platform) => 
-            platform.userData.xPosition < leftmost.userData.xPosition ? platform : leftmost
-          );
-          
-          // Respawn on the first platform
-          player.position.set(
-            firstPlatform.position.x,
-            firstPlatform.position.y + 1.35, // Platform top + player half-height
-            firstPlatform.position.z
-          );
-          
-          // Reset startX to the first platform's position (resets distance to 0)
-          startX = firstPlatform.position.x;
-        } else {
-          // Fallback if no platforms exist (shouldn't happen, but just in case)
-          player.position.set(0, 1.35, 0);
-          startX = 0;
+        // Clean up ALL existing platforms
+        for (let i = platforms.length - 1; i >= 0; i--) {
+          const platform = platforms[i];
+          scene.remove(platform);
+          // Don't dispose geometry/material - they're shared across all platforms
+          platforms.splice(i, 1);
         }
         
+        // Reset player to starting position
+        player.position.set(0, 1.35, 0);
+        startX = 0;
+        lastGeneratedX = 0;
         velocity.set(0, 0, 0);
         isJumping = false;
+        
+        // Regenerate initial chunks from scratch
+        generateChunk(0, true);
+        const secondChunkStart = lastGeneratedX;
+        generateChunk(secondChunkStart);
+        const thirdChunkStart = lastGeneratedX;
+        generateChunk(thirdChunkStart);
         
         // Hide "You fell!" message after 2 seconds
         setTimeout(() => {
@@ -390,6 +397,51 @@ export default function ParkourGame() {
         userSelect: 'none'
       }}>
         🏃 How far can you go? 🏃
+      </div>
+      
+      {/* Crosshair */}
+      <div style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        pointerEvents: 'none',
+        zIndex: 1000
+      }}>
+        {/* Horizontal line */}
+        <div style={{
+          position: 'absolute',
+          width: '20px',
+          height: '2px',
+          backgroundColor: 'rgba(255, 255, 255, 0.8)',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          boxShadow: '0 0 3px rgba(0, 0, 0, 0.8)'
+        }} />
+        {/* Vertical line */}
+        <div style={{
+          position: 'absolute',
+          width: '2px',
+          height: '20px',
+          backgroundColor: 'rgba(255, 255, 255, 0.8)',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          boxShadow: '0 0 3px rgba(0, 0, 0, 0.8)'
+        }} />
+        {/* Center dot */}
+        <div style={{
+          position: 'absolute',
+          width: '4px',
+          height: '4px',
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+          borderRadius: '50%',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          boxShadow: '0 0 3px rgba(0, 0, 0, 0.8)'
+        }} />
       </div>
     </div>
   );
