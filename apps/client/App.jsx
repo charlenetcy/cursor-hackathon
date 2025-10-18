@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { io } from 'socket.io-client';
 import { useBackgroundGeneration } from './src/hooks/useBackgroundGeneration';
 import BackgroundPromptInput from './src/components/BackgroundPromptInput';
 
@@ -17,6 +18,7 @@ export default function ParkourGame() {
   // Store references to Three.js objects for dynamic background updates
   const skyMaterialRef = useRef(null);
   const textureLoaderRef = useRef(null);
+  const localPlayerIdRef = useRef(null);
 
   // Handle background generation
   const handleBackgroundReady = (imageUrl) => {
@@ -37,6 +39,9 @@ export default function ParkourGame() {
 
     // Scene setup
     const scene = new THREE.Scene();
+    const socket = io('http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+    });
     
     // Create a large sphere for the background (skybox effect)
     const textureLoader = new THREE.TextureLoader();
@@ -104,12 +109,13 @@ export default function ParkourGame() {
     const jumpStrength = 0.45; // Slightly increased for bigger gaps
     const moveSpeed = 0.18; // Slightly faster for bigger platforms
 
-    // Platforms - Infinite generation system
+    // Platforms - server-authoritative
     const texture = new THREE.TextureLoader().load( './assets/grass_dirt.png' );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
 
-    const platforms = [];
+    const platforms = new Map(); // id -> mesh
+    const otherPlayers = new Map(); // playerId -> mesh
     const platformGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
     
     // Shared materials for all platforms (more memory efficient)
@@ -124,64 +130,26 @@ export default function ParkourGame() {
       emissive: 0x664400 // Special platforms glow
     });
     
-    // Track generation progress (adjusted for 1.5 sized blocks)
-    let lastGeneratedX = 0;
+    // Track state
     let startX = 0; // Track starting position for score calculation
-    const chunkSize = 4; // Number of platforms per chunk
-    const platformSpacing = -7; // Distance between platform centers (negative = grow towards -X)
-    const generationDistance = 50; // Generate when player is within this distance
     const removalDistance = 35; // Remove platforms this far behind player
     
-    // Create a single platform
-    const createPlatform = (x, y, z, isSpecial = false) => {
-      const material = isSpecial ? specialMaterial : regularMaterial;
-      const platform = new THREE.Mesh(platformGeometry, material);
-      platform.receiveShadow = true;
-      platform.castShadow = true;
-      platform.position.set(x, y, z);
-      platform.userData.xPosition = x; // Store for cleanup
-      scene.add(platform);
-      platforms.push(platform);
-      return platform;
-    };
+    // Local helper no longer used (server streams platforms)
 
-    // Generate a chunk of platforms
-    const generateChunk = (startX, isFirstChunk = false) => {
-      for (let i = 0; i < chunkSize; i++) {
-        const x = startX + (i * platformSpacing);
-        
-        let y, z;
-        
-        // First platform should be at fixed position for spawning
-        if (isFirstChunk && i === 0) {
-          y = 0; // Platform center at 0, top at 0.75 for 1.5 sized blocks
-          z = 0;
-        } else {
-          // Procedural height variation (adjusted for 1.5 sized blocks)
-          const heightWave = Math.sin(x * 0.1) * 2.5;
-          const randomHeight = (Math.random() - 0.5) * 1.2;
-          y = heightWave + randomHeight;
-          
-          // Procedural Z position (side-to-side movement, scaled for bigger blocks)
-          const zWave = Math.sin(x * 0.15) * 3.5;
-          const randomZ = (Math.random() - 0.5) * 2.5;
-          z = zWave + randomZ;
-        }
-        
-        // Every 20th platform is special (gold)
-        const isSpecial = Math.floor(x / platformSpacing) % 20 === 0 && x > 0;
-        
-        createPlatform(x, y, z, isSpecial);
+    // Server initial platforms
+    const upsertPlatforms = (list) => {
+      for (const p of list) {
+        if (platforms.has(p.id)) continue;
+        const material = p.isSpecial ? specialMaterial : regularMaterial;
+        const mesh = new THREE.Mesh(platformGeometry, material);
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        mesh.position.set(p.position.x, p.position.y, p.position.z);
+        mesh.userData.xPosition = p.position.x;
+        scene.add(mesh);
+        platforms.set(p.id, mesh);
       }
-      lastGeneratedX = startX + (chunkSize * platformSpacing);
     };
-
-    // Generate initial chunks (first one is special to ensure proper spawn)
-    generateChunk(0, true);
-    const secondChunkStart = lastGeneratedX;
-    generateChunk(secondChunkStart);
-    const thirdChunkStart = lastGeneratedX;
-    generateChunk(thirdChunkStart);
 
     // Ground (death zone) - Make it large for infinite mode
     const groundGeometry = new THREE.PlaneGeometry(10000, 100);
@@ -216,7 +184,7 @@ export default function ParkourGame() {
     const checkCollision = () => {
       const playerBox = new THREE.Box3().setFromObject(player);
       
-      for (let platform of platforms) {
+      for (const platform of platforms.values()) {
         const platformBox = new THREE.Box3().setFromObject(platform);
         
         // Expand platform collision box for more forgiving landing (invisible extra space)
@@ -241,6 +209,66 @@ export default function ParkourGame() {
       }
       return false;
     };
+
+    // Socket events
+    socket.on('world_init', (data) => {
+      if (data && data.playerId) {
+        localPlayerIdRef.current = data.playerId;
+      }
+      if (Array.isArray(data.platforms)) {
+        upsertPlatforms(data.platforms);
+      }
+      // Seed existing other players
+      if (Array.isArray(data.players)) {
+        for (const p of data.players) {
+          if (p.id === localPlayerIdRef.current) continue;
+          if (!otherPlayers.has(p.id)) {
+            const mesh = new THREE.Mesh(
+              new THREE.BoxGeometry(0.6, 1.2, 0.6),
+              new THREE.MeshPhongMaterial({ color: 0x00ff7f })
+            );
+            mesh.castShadow = true;
+            mesh.position.set(p.position.x, p.position.y, p.position.z);
+            scene.add(mesh);
+            otherPlayers.set(p.id, mesh);
+          }
+        }
+      }
+    });
+
+    socket.on('platforms_add', (data) => {
+      if (Array.isArray(data.platforms)) {
+        upsertPlatforms(data.platforms);
+      }
+    });
+
+    // Authoritative state updates for other players
+    socket.on('state', (data) => {
+      if (!data || !Array.isArray(data.players)) return;
+      const seen = new Set();
+      for (const p of data.players) {
+        if (p.id === localPlayerIdRef.current) continue;
+        seen.add(p.id);
+        let mesh = otherPlayers.get(p.id);
+        if (!mesh) {
+          mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.6, 1.2, 0.6),
+            new THREE.MeshPhongMaterial({ color: 0x00ff7f })
+          );
+          mesh.castShadow = true;
+          scene.add(mesh);
+          otherPlayers.set(p.id, mesh);
+        }
+        mesh.position.set(p.position.x, p.position.y, p.position.z);
+      }
+      // Remove players that disappeared
+      for (const [id, mesh] of otherPlayers.entries()) {
+        if (!seen.has(id)) {
+          scene.remove(mesh);
+          otherPlayers.delete(id);
+        }
+      }
+    });
 
     // Animation loop
     const animate = () => {
@@ -280,25 +308,22 @@ export default function ParkourGame() {
       // Check collisions
       checkCollision();
 
-      // Infinite generation: Generate new chunks ahead (in negative X direction)
-      if (player.position.x < lastGeneratedX + generationDistance) {
-        generateChunk(lastGeneratedX);
-      }
+      // Send client state to server (authoritative positions)
+      socket.emit('client_state', { 
+        position: { x: player.position.x, y: player.position.y, z: player.position.z },
+        yaw: camera.rotation.y,
+      });
 
       // Remove old platforms behind player to save memory
-      for (let i = platforms.length - 1; i >= 0; i--) {
-        const platform = platforms[i];
+      for (const [id, platform] of platforms.entries()) {
         if (platform.userData.xPosition > player.position.x + removalDistance) {
           scene.remove(platform);
-          // Don't dispose geometry/material - they're shared across all platforms
-          platforms.splice(i, 1);
+          platforms.delete(id);
         }
       }
 
-      // Update score based on distance traveled (only when landed on a platform)
-      // Add offset so score updates at the start of each block, not halfway through
-      const scoreOffset = Math.abs(platformSpacing) / 2; // Half a platform spacing
-      const distanceScore = Math.floor(Math.max(0, startX - player.position.x + scoreOffset) / Math.abs(platformSpacing));
+      // Update score based on horizontal distance traveled from start (blocks are server-driven)
+      const distanceScore = Math.floor(Math.max(0, startX - player.position.x));
       // Only update score when player is grounded (not jumping)
       if (distanceScore > score && !isJumping) {
         setScore(distanceScore);
@@ -317,29 +342,13 @@ export default function ParkourGame() {
           localStorage.setItem('parkourHighScore', newHighScore.toString());
         }
         
-        // Clean up ALL existing platforms
-        for (let i = platforms.length - 1; i >= 0; i--) {
-          const platform = platforms[i];
-          scene.remove(platform);
-          // Don't dispose geometry/material - they're shared across all platforms
-          platforms.splice(i, 1);
-        }
-        
         // Reset player to starting position
         player.position.set(0, 1.35, 0);
         startX = 0;
-        lastGeneratedX = 0;
         velocity.set(0, 0, 0);
         isJumping = false;
         
         // Note: Background is NOT reset on game restart - user's custom background persists
-        
-        // Regenerate initial chunks from scratch
-        generateChunk(0, true);
-        const secondChunkStart = lastGeneratedX;
-        generateChunk(secondChunkStart);
-        const thirdChunkStart = lastGeneratedX;
-        generateChunk(thirdChunkStart);
         
         // Hide "You fell!" message after 2 seconds
         setTimeout(() => {
@@ -367,6 +376,7 @@ export default function ParkourGame() {
 
     // Cleanup
     return () => {
+      socket.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', () => {});
       window.removeEventListener('keyup', () => {});
