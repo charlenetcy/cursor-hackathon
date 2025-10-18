@@ -12,7 +12,9 @@ export default function ParkourGame() {
 
     // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb);
+    const textureBackground = new THREE.TextureLoader().load( 'assets/deepfried.jpg' );
+
+    scene.background = textureBackground;
     scene.fog = new THREE.Fog(0x87ceeb, 0, 100);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -57,12 +59,17 @@ export default function ParkourGame() {
     const moveSpeed = 0.15;
 
     // Platforms
+    const texture = new THREE.TextureLoader().load( 'assets/atlas.png' );
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.NearestFilter;
+
     const platforms = [];
-    const platformGeometry = new THREE.BoxGeometry(3, 0.5, 3);
+    const platformGeometry = new THREE.BoxGeometry(1, 1, 1);
     
     // Starting platform
     const createPlatform = (x, y, z, color = 0x228b22) => {
-      const material = new THREE.MeshPhongMaterial({ color });
+      // const material = new THREE.MeshPhongMaterial({ color });
+      const material = new THREE.MeshLambertMaterial( { map: texture, side: THREE.DoubleSide } );
       const platform = new THREE.Mesh(platformGeometry, material);
       platform.receiveShadow = true;
       platform.castShadow = true;
